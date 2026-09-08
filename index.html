@@ -170,6 +170,7 @@
   <div id="screen-admin" class="hidden" style="flex:1; display:flex; flex-direction:column;">
     <div class="topbar">
       <div class="title">签到系统 · 管理</div>
+      <button class="logout" id="admin-pwd">改密</button>
       <button class="logout" id="admin-logout">退出</button>
     </div>
 
@@ -231,6 +232,7 @@
   <div id="screen-member" class="hidden">
     <div class="topbar">
       <div class="title">我的签到记录</div>
+      <button class="logout" id="member-pwd">改密</button>
       <button class="logout" id="member-logout">退出</button>
     </div>
     <div class="content" style="padding-bottom:30px;">
@@ -302,6 +304,18 @@
     <div class="field"><label>备注</label><textarea id="edit-note" placeholder="备注"></textarea></div>
     <button class="btn" id="edit-save">保存</button>
     <button class="btn secondary" id="edit-cancel" style="margin-top:8px;">取消</button>
+  </div>
+</div>
+
+<!-- 修改密码弹窗 -->
+<div class="modal-mask hidden" id="pwd-mask">
+  <div class="modal">
+    <h3>修改密码</h3>
+    <div class="field"><label>当前密码</label><input type="password" id="pwd-cur" placeholder="当前密码"></div>
+    <div class="field"><label>新密码（至少 6 位）</label><input type="password" id="pwd-new" placeholder="新密码"></div>
+    <div class="field"><label>确认新密码</label><input type="password" id="pwd-confirm" placeholder="再输一遍新密码"></div>
+    <button class="btn" id="pwd-save">确认修改</button>
+    <button class="btn secondary" id="pwd-cancel" style="margin-top:8px;">取消</button>
   </div>
 </div>
 
@@ -391,6 +405,37 @@ async function authCall(method, path, body){
     throw new Error(mapAuthError(m));
   }
   return j;
+}
+async function changePassword(curPwd, newPwd){
+  // 用当前密码重新登录，换取有效 access_token（同时校验当前密码是否正确）
+  const login = await authCall('POST', '/auth/v1/token?grant_type=password', { email: state.session.email, password: curPwd });
+  const token = login && login.access_token;
+  if(!token) throw new Error('当前密码校验失败');
+  const url = SUPABASE_URL.replace(/\/+$/,'') + '/auth/v1/user';
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: newPwd })
+  });
+  if(!res.ok){
+    let m = res.statusText;
+    try { const j = await res.json(); m = j.msg || j.error_description || j.message || m; } catch(e){}
+    throw new Error(mapAuthError(m));
+  }
+}
+function openPwd(){
+  $('#pwd-cur').value=''; $('#pwd-new').value=''; $('#pwd-confirm').value='';
+  $('#pwd-mask').classList.remove('hidden');
+}
+async function doChangePwd(){
+  const cur = $('#pwd-cur').value, neu = $('#pwd-new').value, confirm2 = $('#pwd-confirm').value;
+  if(!cur){ toast('请输入当前密码'); return; }
+  if(neu.length < 6){ toast('新密码至少 6 位'); return; }
+  if(neu !== confirm2){ toast('两次输入的新密码不一致'); return; }
+  const btn = $('#pwd-save'); btn.disabled = true; btn.textContent = '修改中…';
+  try{ await changePassword(cur, neu); $('#pwd-mask').classList.add('hidden'); toast('密码修改成功'); }
+  catch(e){ toast(e.message); }
+  btn.disabled = false; btn.textContent = '确认修改';
 }
 const SESSION_KEY = 'signin_session';
 const state = { session:null, role:null, people:[], sessions:[], cur:null, idx:0, editId:null, member:null, memberRecords:[] };
@@ -792,10 +837,17 @@ function bindEvents(){
   $('#admin-logout').onclick = ()=>{ if(confirm('退出登录？')) logout(); };
   $('#member-logout').onclick = ()=>{ logout(); };
 
+  // 修改密码
+  $('#admin-pwd').onclick = openPwd;
+  $('#member-pwd').onclick = openPwd;
+  $('#pwd-save').onclick = doChangePwd;
+  $('#pwd-cancel').onclick = ()=>$('#pwd-mask').classList.add('hidden');
+  $('#pwd-mask').onclick = e=>{ if(e.target.id==='pwd-mask') $('#pwd-mask').classList.add('hidden'); };
+
   // 底部导航
   document.querySelectorAll('#screen-admin .tabbar button').forEach(b=>b.onclick=()=>showMain(b.dataset.view));
 
-  window.addEventListener('keydown', e=>{ if(e.key==='Escape') $('#edit-mask').classList.add('hidden'); });
+  window.addEventListener('keydown', e=>{ if(e.key==='Escape'){ $('#edit-mask').classList.add('hidden'); $('#pwd-mask').classList.add('hidden'); } });
 }
 
 async function init(){
