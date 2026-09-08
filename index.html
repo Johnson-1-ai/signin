@@ -163,6 +163,7 @@
       <input type="password" id="login-password" placeholder="••••••" autocomplete="current-password">
     </div>
     <button class="btn" id="login-submit">登录</button>
+    <button class="btn secondary" id="install-btn" style="margin-top:12px;">📲 安装到桌面 / 主屏幕</button>
     <p class="hint" id="login-hint">注册后请告知管理员，把你的邮箱加入名单，即可查看自己的签到记录。</p>
   </div>
 
@@ -316,6 +317,15 @@
     <div class="field"><label>确认新密码</label><input type="password" id="pwd-confirm" placeholder="再输一遍新密码"></div>
     <button class="btn" id="pwd-save">确认修改</button>
     <button class="btn secondary" id="pwd-cancel" style="margin-top:8px;">取消</button>
+  </div>
+</div>
+
+<!-- 安装应用说明弹窗 -->
+<div class="modal-mask hidden" id="install-mask">
+  <div class="modal">
+    <h3>📲 安装应用</h3>
+    <div id="install-steps" style="font-size:15px; line-height:1.9;"></div>
+    <button class="btn secondary" id="install-close" style="margin-top:8px;">知道了</button>
   </div>
 </div>
 
@@ -792,6 +802,32 @@ async function enterAdmin(){
   showMain('people');
 }
 
+/* ================= 安装为应用（PWA）================= */
+let deferredPrompt = null;
+function isInstalled(){
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+window.addEventListener('beforeinstallprompt', (e)=>{ e.preventDefault(); deferredPrompt = e; });
+window.addEventListener('appinstalled', ()=>{ const b=$('#install-btn'); if(b) b.classList.add('hidden'); toast('已安装，可从桌面/主屏幕启动'); });
+function installSteps(){
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  const isAndroid = /Android/.test(ua);
+  if(isIOS) return '<p>① 用 <b>Safari</b> 打开本页<br>② 点底部 <b>分享</b> 按钮<br>③ 选择 <b>添加到主屏幕</b><br>④ 点右上角 <b>添加</b></p>';
+  if(isAndroid) return '<p>① 用 <b>Chrome</b> 打开本页<br>② 点右上角 <b>⋮</b> 菜单<br>③ 选择 <b>安装应用 / 添加到主屏幕</b></p>';
+  return '<p>① 用 <b>Chrome 或 Edge</b> 打开本页<br>② 点地址栏右侧的 <b>安装</b> 图标<br>③ 或在浏览器菜单里点 <b>安装「签到系统」</b></p>';
+}
+async function installApp(){
+  if(deferredPrompt){
+    deferredPrompt.prompt();
+    try { await deferredPrompt.userChoice; } catch(e){}
+    deferredPrompt = null;
+    return;
+  }
+  $('#install-steps').innerHTML = installSteps();
+  $('#install-mask').classList.remove('hidden');
+}
+
 /* ================= 初始化 ================= */
 function bindEvents(){
   // 登录
@@ -843,6 +879,12 @@ function bindEvents(){
   $('#pwd-save').onclick = doChangePwd;
   $('#pwd-cancel').onclick = ()=>$('#pwd-mask').classList.add('hidden');
   $('#pwd-mask').onclick = e=>{ if(e.target.id==='pwd-mask') $('#pwd-mask').classList.add('hidden'); };
+
+  // 安装应用
+  $('#install-btn').onclick = installApp;
+  $('#install-close').onclick = ()=>$('#install-mask').classList.add('hidden');
+  $('#install-mask').onclick = e=>{ if(e.target.id==='install-mask') $('#install-mask').classList.add('hidden'); };
+  if(isInstalled()) $('#install-btn').classList.add('hidden');
 
   // 底部导航
   document.querySelectorAll('#screen-admin .tabbar button').forEach(b=>b.onclick=()=>showMain(b.dataset.view));
