@@ -865,6 +865,11 @@ function bindEvents(){
   $('#hist-date').onchange = renderHistory;
 
   // 弹窗
+  // 编辑弹窗：点击「已到/未到」切换选中状态
+  document.querySelectorAll('#edit-status button').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('#edit-status button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+  });
   $('#edit-save').onclick = saveEdit;
   $('#edit-cancel').onclick = ()=>$('#edit-mask').classList.add('hidden');
   $('#edit-mask').onclick = e=>{ if(e.target.id==='edit-mask') $('#edit-mask').classList.add('hidden'); };
