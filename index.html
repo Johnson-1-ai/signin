@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>签到系统</title>
+<meta name="theme-color" content="#2563eb">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --line:#e6e8eb;
+    --text:#1a1d21; --muted:#8a919b;
+    --brand:#2563eb; --brand-2:#1d4ed8;
+    --green:#16a34a; --green-2:#15803d; --green-bg:#e9f9ef;
+    --red:#dc2626; --red-2:#b91c1c; --red-bg:#fdecec;
+    --radius:14px; --shadow:0 1px 3px rgba(0,0,0,.06),0 4px 14px rgba(0,0,0,.05);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--text); font-size:16px; line-height:1.5;
+  }
+  #app{max-width:640px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; position:relative;}
+  .topbar{
+    display:flex; align-items:center; gap:10px; padding:14px 16px;
+    background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:10;
+  }
+  .topbar .title{font-weight:700; font-size:17px; flex:1;}
+  .topbar .icon-btn{
+    border:none; background:transparent; font-size:20px; padding:4px 8px; cursor:pointer; color:var(--muted); border-radius:8px;
+  }
+  .topbar .icon-btn:active{background:#eef0f3;}
+  .content{flex:1; padding:16px; padding-bottom:84px;}
+  .card{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; margin-bottom:14px;}
+  .card h3{margin:0 0 10px; font-size:15px; color:var(--muted); font-weight:600;}
+  .tabbar{
+    position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:640px;
+    display:flex; background:var(--card); border-top:1px solid var(--line); z-index:20; padding-bottom:env(safe-area-inset-bottom);
+  }
+  .tabbar button{flex:1; border:none; background:none; padding:10px 0 8px; font-size:12px; color:var(--muted); cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:2px;}
+  .tabbar button .ico{font-size:20px; line-height:1;}
+  .tabbar button.active{color:var(--brand); font-weight:600;}
+  button.btn{border:none; border-radius:12px; padding:12px 16px; font-size:16px; font-weight:600; cursor:pointer; background:var(--brand); color:#fff; width:100%;}
+  button.btn:active{background:var(--brand-2);}
+  button.btn.secondary{background:#eef1f5; color:var(--text);}
+  button.btn.danger{background:var(--red-bg); color:var(--red);}
+  button.btn:disabled{opacity:.5; cursor:not-allowed;}
+  input[type=text],input[type=password],input[type=email],input[type=date],textarea{
+    width:100%; border:1px solid var(--line); border-radius:10px; padding:11px 12px; font-size:16px; font-family:inherit; background:#fff; color:var(--text);
+  }
+  textarea{resize:vertical; min-height:110px;}
+  input:focus,textarea:focus{outline:none; border-color:var(--brand);}
+  .field{margin-bottom:12px;}
+  .field label{display:block; font-size:13px; color:var(--muted); margin-bottom:6px; font-weight:600;}
+  .seg{display:flex; background:#eef1f5; border-radius:12px; padding:4px; gap:4px;}
+  .seg button{flex:1; border:none; background:transparent; padding:10px; border-radius:9px; font-size:16px; cursor:pointer; color:var(--muted); font-weight:600;}
+  .seg button.active{background:#fff; color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.1);}
+  .person-list{display:flex; flex-direction:column; gap:8px;}
+  .person-row{display:flex; align-items:center; gap:10px; padding:10px 12px; background:#f8f9fb; border-radius:10px;}
+  .person-row .idx{color:var(--muted); font-size:13px; width:22px; text-align:right; flex-shrink:0;}
+  .person-row .nm{font-weight:600; flex:1;}
+  .person-row .sd{color:var(--muted); font-size:13px;}
+  .person-row .del{border:none; background:transparent; color:#c1c6cd; font-size:18px; cursor:pointer; padding:0 4px;}
+  .person-row .del:active{color:var(--red);}
+  .empty{text-align:center; color:var(--muted); padding:28px 10px; font-size:15px;}
+  .empty .big{font-size:40px; display:block; margin-bottom:8px;}
+  .hint{font-size:12px; color:var(--muted); margin-top:6px; line-height:1.6;}
+  /* ===== 登录 ===== */
+  #screen-login{max-width:420px; margin:0 auto; padding:40px 24px;}
+  .login-logo{text-align:center; font-size:56px; margin:10px 0 2px;}
+  .login-title{text-align:center; font-size:24px; font-weight:800; margin:0 0 4px;}
+  .login-sub{text-align:center; color:var(--muted); font-size:14px; margin:0 0 28px;}
+  /* ===== 逐人签到 ===== */
+  #screen-signing{position:fixed; top:0; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:640px; background:var(--bg); z-index:50; display:flex; flex-direction:column;}
+  .signing-meta{text-align:center; font-size:13px; color:var(--muted);}
+  .signing-meta b{color:var(--text);}
+  .progressbar{height:5px; background:#e9ecf1; border-radius:3px; overflow:hidden; margin-top:8px;}
+  .progressbar > div{height:100%; background:var(--brand); transition:width .15s;}
+  .signing-body{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px;}
+  .signing-name{font-size:56px; font-weight:800; letter-spacing:2px; text-align:center; margin:0;}
+  .signing-sid{font-size:20px; color:var(--muted); margin-top:10px; letter-spacing:1px; font-variant-numeric:tabular-nums;}
+  .signing-foot{background:var(--card); border-top:1px solid var(--line); padding:14px 16px; padding-bottom:calc(14px + env(safe-area-inset-bottom));}
+  .signing-note{display:flex; align-items:center; gap:10px; margin-bottom:14px;}
+  .signing-note label{font-size:13px; color:var(--muted); flex-shrink:0; font-weight:600;}
+  .signing-note input{flex:1;}
+  .signing-actions{display:flex; gap:12px; align-items:stretch;}
+  .btn-absent,.btn-present{flex:1; border:none; border-radius:14px; padding:18px 0; font-size:20px; font-weight:700; cursor:pointer; color:#fff;}
+  .btn-absent{background:var(--red);} .btn-absent:active{background:var(--red-2);}
+  .btn-present{background:var(--green);} .btn-present:active{background:var(--green-2);}
+  .btn-prev{flex:0 0 76px; border:none; border-radius:14px; background:#eef1f5; color:var(--muted); font-size:15px; font-weight:600; cursor:pointer;}
+  .btn-prev:active{background:#e2e6ec;} .btn-prev:disabled{opacity:.35;}
+  /* ===== 统计/名单 ===== */
+  .stat-row{display:flex; gap:10px; margin-bottom:14px;}
+  .stat{flex:1; background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px; text-align:center;}
+  .stat .num{font-size:28px; font-weight:800;}
+  .stat .lbl{font-size:12px; color:var(--muted); margin-top:2px;}
+  .stat.present .num{color:var(--green);} .stat.absent .num{color:var(--red);} .stat.total .num{color:var(--brand);}
+  .roster-table{width:100%; border-collapse:collapse; font-size:14px;}
+  .roster-table th,.roster-table td{padding:9px 8px; text-align:left; border-bottom:1px solid var(--line);}
+  .roster-table th{color:var(--muted); font-weight:600; font-size:12px;}
+  .roster-table tr:last-child td{border-bottom:none;}
+  .badge{display:inline-block; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:600;}
+  .badge.present{background:var(--green-bg); color:var(--green);}
+  .badge.absent{background:var(--red-bg); color:var(--red);}
+  .absent-item{display:flex; align-items:center; gap:10px; padding:12px; border:1px solid var(--line); border-radius:12px; margin-bottom:8px; cursor:pointer; background:#fff;}
+  .absent-item:active{background:#f6f7f9;}
+  .absent-item .nm{font-weight:600; flex:1;}
+  .absent-item .sd{color:var(--muted); font-size:14px; margin-right:4px;}
+  .absent-item .note{font-size:12px; color:var(--muted); max-width:40%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .section-title{font-size:14px; font-weight:700; margin:16px 0 10px; display:flex; align-items:center; gap:8px;}
+  .section-title .tag{background:var(--red-bg); color:var(--red); font-size:11px; padding:2px 8px; border-radius:10px;}
+  .row-2{display:flex; gap:10px;} .row-2 .btn{flex:1;}
+  .session-item{display:flex; align-items:center; gap:10px; padding:14px; background:#fff; border:1px solid var(--line); border-radius:12px; margin-bottom:10px; cursor:pointer;}
+  .session-item:active{background:#f6f7f9;}
+  .session-item .dt{flex:1;} .session-item .dt .d{font-weight:700; font-size:16px;} .session-item .dt .p{font-size:13px; color:var(--muted);}
+  .session-item .cnt{font-size:12px; color:var(--muted); text-align:right; line-height:1.5;}
+  .session-item .cnt b{font-size:15px;}
+  /* ===== 成员记录 ===== */
+  .record-row{display:flex; align-items:center; gap:10px; padding:13px 14px; background:#fff; border:1px solid var(--line); border-radius:12px; margin-bottom:10px;}
+  .record-row .rr-dt{flex:1;} .record-row .rr-dt .d{font-weight:600;}
+  .record-row .rr-note{font-size:12px; color:var(--muted); margin-top:2px;}
+  /* ===== 弹窗 ===== */
+  .modal-mask{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:100; display:flex; align-items:flex-end; justify-content:center;}
+  .modal{background:#fff; width:100%; max-width:640px; border-radius:18px 18px 0 0; padding:20px 18px calc(20px + env(safe-area-inset-bottom)); animation:up .2s ease;}
+  @keyframes up{from{transform:translateY(30px); opacity:.6;} to{transform:translateY(0); opacity:1;}}
+  .modal h3{margin:0 0 14px; font-size:17px;}
+  #toast{position:fixed; top:18px; left:50%; transform:translateX(-50%); background:rgba(20,22,26,.92); color:#fff; padding:10px 18px; border-radius:22px; font-size:14px; z-index:200; opacity:0; pointer-events:none; transition:opacity .25s; max-width:86%;}
+  #toast.show{opacity:1;}
+  .hidden{display:none !important;}
+  a{color:var(--brand);}
+  .logout{font-size:13px; color:var(--muted); border:1px solid var(--line); background:#fff; border-radius:8px; padding:5px 10px; cursor:pointer;}
+  .logout:active{background:#f3f4f6;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== 配置缺失 ===== -->
+  <div id="screen-config" class="hidden" style="padding:40px 24px;">
+    <div style="text-align:center; font-size:48px;">⚠️</div>
+    <h1 style="text-align:center; font-size:20px; margin:12px 0;">尚未配置云端数据库</h1>
+    <p class="hint" style="text-align:center;">请打开 <b>index.html</b>，把最上方 <code>SUPABASE_URL</code> 和 <code>SUPABASE_ANON_KEY</code> 填成你自己的值（详见同目录 README.md），保存后刷新本页。</p>
+  </div>
+
+  <!-- ===== 登录 ===== -->
+  <div id="screen-login" class="hidden">
+    <div class="login-logo">📋</div>
+    <div class="login-title">签到系统</div>
+    <div class="login-sub">电脑手机互通 · 云端同步</div>
+    <div class="seg" id="login-mode" style="margin-bottom:18px;">
+      <button data-mode="login" class="active">登录</button>
+      <button data-mode="register">注册</button>
+    </div>
+    <div class="field">
+      <label>邮箱</label>
+      <input type="email" id="login-email" placeholder="you@example.com" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>密码（至少 6 位）</label>
+      <input type="password" id="login-password" placeholder="••••••" autocomplete="current-password">
+    </div>
+    <button class="btn" id="login-submit">登录</button>
+    <p class="hint" id="login-hint">注册后请告知管理员，把你的邮箱加入名单，即可查看自己的签到记录。</p>
+  </div>
+
+  <!-- ===== 管理员主界面 ===== -->
+  <div id="screen-admin" class="hidden" style="flex:1; display:flex; flex-direction:column;">
+    <div class="topbar">
+      <div class="title">签到系统 · 管理</div>
+      <button class="logout" id="admin-logout">退出</button>
+    </div>
+
+    <!-- 人员 -->
+    <div id="view-people" class="content">
+      <div class="card">
+        <h3>批量录入人员（每行一人）</h3>
+        <textarea id="people-input" placeholder="张三 2023001 zhang@example.com&#10;李四 2023002 li@example.com&#10;王五 2023003"></textarea>
+        <p class="hint">格式「姓名 学号 [邮箱]」，姓名学号之间用空格或逗号分隔，邮箱选填；填了邮箱该学生才能登录查看自己的记录。</p>
+        <button class="btn" id="people-parse" style="margin-top:12px;">解析预览</button>
+        <div id="people-preview-wrap" class="hidden" style="margin-top:12px;">
+          <div class="person-list" id="people-preview"></div>
+          <button class="btn" id="people-save" style="margin-top:12px;">保存到名单</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>当前名单（<span id="people-count">0</span> 人）</h3>
+        <div class="person-list" id="people-list"></div>
+        <button class="btn danger" id="people-clear" style="margin-top:12px;">清空全部人员</button>
+      </div>
+    </div>
+
+    <!-- 签到 -->
+    <div id="view-sign" class="content hidden">
+      <div class="card">
+        <h3>发起签到</h3>
+        <div class="field"><label>日期</label><input type="date" id="sign-date"></div>
+        <div class="field"><label>时段</label>
+          <div class="seg" id="sign-period">
+            <button data-period="上午" class="active">上午</button>
+            <button data-period="下午">下午</button>
+          </div>
+        </div>
+        <button class="btn" id="sign-start">开始签到</button>
+        <p class="hint" id="sign-hint"></p>
+      </div>
+    </div>
+
+    <!-- 记录 -->
+    <div id="view-history" class="content hidden">
+      <div class="card">
+        <h3>按日期查询</h3>
+        <div class="row-2">
+          <input type="date" id="hist-date">
+          <button class="btn secondary" id="hist-clear" style="flex:0 0 80px;">全部</button>
+        </div>
+      </div>
+      <div id="hist-list"></div>
+    </div>
+
+    <div class="tabbar">
+      <button data-view="people" class="active"><span class="ico">👥</span>人员</button>
+      <button data-view="sign"><span class="ico">✅</span>签到</button>
+      <button data-view="history"><span class="ico">📅</span>记录</button>
+    </div>
+  </div>
+
+  <!-- ===== 成员只读记录 ===== -->
+  <div id="screen-member" class="hidden">
+    <div class="topbar">
+      <div class="title">我的签到记录</div>
+      <button class="logout" id="member-logout">退出</button>
+    </div>
+    <div class="content" style="padding-bottom:30px;">
+      <div class="card" style="text-align:center; padding:22px;">
+        <div style="font-size:40px;">🙋</div>
+        <div style="font-size:20px; font-weight:700; margin-top:6px;" id="member-hello"></div>
+        <div class="hint" id="member-sub"></div>
+      </div>
+      <div class="stat-row">
+        <div class="stat total"><div class="num" id="m-total">0</div><div class="lbl">总次数</div></div>
+        <div class="stat present"><div class="num" id="m-present">0</div><div class="lbl">已到</div></div>
+        <div class="stat absent"><div class="num" id="m-absent">0</div><div class="lbl">未到</div></div>
+      </div>
+      <div class="section-title">历次签到</div>
+      <div id="member-list"></div>
+    </div>
+  </div>
+
+  <!-- ===== 逐人签到 ===== -->
+  <div id="screen-signing" class="hidden">
+    <div class="topbar">
+      <button class="icon-btn" id="signing-back" title="退出（进度已保存）">←</button>
+      <div class="signing-meta" style="flex:1;">
+        <span id="signing-label"></span> · <b id="signing-progress"></b>
+        <div class="progressbar"><div id="signing-bar" style="width:0%"></div></div>
+      </div>
+      <button class="icon-btn" id="signing-done" title="查看结果" style="font-size:16px;">结果</button>
+    </div>
+    <div class="signing-body">
+      <h1 class="signing-name" id="signing-name"></h1>
+      <div class="signing-sid" id="signing-sid"></div>
+    </div>
+    <div class="signing-foot">
+      <div class="signing-note">
+        <label>备注</label>
+        <input type="text" id="signing-note" placeholder="选填，如：请假 / 迟到…">
+      </div>
+      <div class="signing-actions">
+        <button class="btn-absent" id="signing-absent">未到</button>
+        <button class="btn-prev" id="signing-prev">上一个</button>
+        <button class="btn-present" id="signing-present">已到</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 会话详情 ===== -->
+  <div id="screen-session" class="hidden">
+    <div class="topbar">
+      <button class="icon-btn" id="session-back">←</button>
+      <div class="title" id="session-title">名单</div>
+      <button class="icon-btn" id="session-del" title="删除本次签到">🗑</button>
+    </div>
+    <div class="content" id="session-body" style="padding-bottom:30px;"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div class="modal-mask hidden" id="edit-mask">
+  <div class="modal">
+    <h3 id="edit-title">修改签到</h3>
+    <div class="field">
+      <label>签到情况</label>
+      <div class="seg" id="edit-status">
+        <button data-status="已到">已到</button>
+        <button data-status="未到">未到</button>
+      </div>
+    </div>
+    <div class="field"><label>备注</label><textarea id="edit-note" placeholder="备注"></textarea></div>
+    <button class="btn" id="edit-save">保存</button>
+    <button class="btn secondary" id="edit-cancel" style="margin-top:8px;">取消</button>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   配置：在这里填你自己的值（只需填一次，所有设备通用）
+   ============================================================ */
+const SUPABASE_URL = "https://wydwkgyrgjgeinxugjdv.supabase.co";        // 例：https://xxxx.supabase.co
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5ZHdrZ3lyZ2pnZWlueHVnamR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4NzQyNzcsImV4cCI6MjEwNDQ1MDI3N30.zmSiYu081OZksjRQYn-YjYrDWoLchLh-XRM6o4UwKeQ";   // 例：eyJhbGciOi...（anon public key）
+const ADMIN_EMAILS = "2024397280@qq.com";        // 管理员邮箱，多个用英文逗号分隔
+
+const ADMIN_SET = new Set(ADMIN_EMAILS.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean));
+
+/* ================= 工具 ================= */
+const $ = s => document.querySelector(s);
+function enc(v){ return encodeURIComponent(v); }
+function todayStr(){
+  const d = new Date(), p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(msg, ms=1800){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._t); t._t = setTimeout(()=>t.classList.remove('show'), ms);
+}
+function showScreen(id){
+  ['screen-config','screen-login','screen-admin','screen-member','screen-signing','screen-session']
+    .forEach(s => $('#'+s).classList.add('hidden'));
+  $('#'+id).classList.remove('hidden');
+}
+
+/* ================= 数据层（Supabase REST）================= */
+const db = {
+  async req(method, path, body){
+    if(!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error('未配置云端数据库');
+    const url = SUPABASE_URL.replace(/\/+$/,'') + '/rest/v1/' + path;
+    const headers = { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY };
+    if(body !== undefined) headers['Content-Type'] = 'application/json';
+    headers['Prefer'] = 'return=representation';
+    let res;
+    try { res = await fetch(url, { method, headers, body: body!==undefined ? JSON.stringify(body) : undefined }); }
+    catch(e){ throw new Error('网络请求失败：' + e.message); }
+    if(!res.ok){
+      let msg = res.statusText;
+      try { const j = await res.json(); msg = j.message || j.hint || JSON.stringify(j); } catch(e){}
+      throw new Error('云端请求失败(' + res.status + ')：' + msg);
+    }
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  }
+};
+const api = {
+  listPeople:   () => db.req('GET', 'people?select=*&order=ord.asc'),
+  addPeople:    rows => db.req('POST', 'people', rows),
+  delPeople:    id => db.req('DELETE', `people?id=eq.${enc(id)}`),
+  findPeopleByEmail: email => db.req('GET', `people?email=eq.${enc(email)}&select=*`),
+  listSessions: () => db.req('GET', 'sessions?select=*&order=sdate.desc'),
+  findSession:  (sdate,period) => db.req('GET', `sessions?sdate=eq.${enc(sdate)}&period=eq.${enc(period)}&select=*`),
+  createSession:(sdate,period) => db.req('POST', 'sessions', [{sdate, period}]),
+  delSession:   id => db.req('DELETE', `sessions?id=eq.${enc(id)}`),
+  listRecords:  sessionId => db.req('GET', `records?session_id=eq.${enc(sessionId)}&select=*&order=ord.asc`),
+  listRecordsBySid: sid => db.req('GET', `records?sid=eq.${enc(sid)}&select=*`),
+  createRecords: rows => db.req('POST', 'records', rows),
+  updateRecord: (id, patch) => db.req('PATCH', `records?id=eq.${enc(id)}`, patch)
+};
+
+/* ================= 账号（Supabase Auth / GoTrue）================= */
+function mapAuthError(m){
+  m = String(m);
+  if(/Invalid login credentials/i.test(m)) return '邮箱或密码错误';
+  if(/already registered|already been registered/i.test(m)) return '该邮箱已注册，请直接登录';
+  if(/Email not confirmed/i.test(m)) return '邮箱未确认：请查收邮件，或在 Supabase 关闭邮箱确认';
+  if(/password should be/i.test(m)) return '密码至少 6 位';
+  if(/valid email/i.test(m)) return '邮箱格式不正确';
+  if(/rate limit/i.test(m)) return '操作太频繁，请稍后再试';
+  return m;
+}
+async function authCall(method, path, body){
+  if(!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error('未配置云端数据库');
+  const url = SUPABASE_URL.replace(/\/+$/,'') + path;
+  const headers = { 'apikey': SUPABASE_ANON_KEY };
+  if(body) headers['Content-Type'] = 'application/json';
+  const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  let j = null; try { j = await res.json(); } catch(e){}
+  if(!res.ok){
+    const m = (j && (j.msg || j.error_description || j.message)) || res.statusText;
+    throw new Error(mapAuthError(m));
+  }
+  return j;
+}
+const SESSION_KEY = 'signin_session';
+const state = { session:null, role:null, people:[], sessions:[], cur:null, idx:0, editId:null, member:null, memberRecords:[] };
+function loadSession(){ try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch(e){ return null; } }
+function saveSession(s){ state.session = s; localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
+function clearSession(){ state.session = null; localStorage.removeItem(SESSION_KEY); }
+
+/* ================= 登录 / 注册 ================= */
+let loginMode = 'login';
+function setLoginMode(mode){
+  loginMode = mode;
+  document.querySelectorAll('#login-mode button').forEach(b=>b.classList.toggle('active', b.dataset.mode===mode));
+  $('#login-submit').textContent = mode==='login' ? '登录' : '注册';
+  $('#login-hint').textContent = mode==='login'
+    ? '登录后：管理员进入管理界面；学生看到自己的签到记录。'
+    : '注册后请告知管理员，把你的邮箱加入名单，即可查看自己的记录。';
+}
+async function submitAuth(){
+  const email = $('#login-email').value.trim().toLowerCase();
+  const password = $('#login-password').value;
+  if(!email || !password){ toast('请填写邮箱和密码'); return; }
+  const btn = $('#login-submit'); btn.disabled = true; btn.textContent = '请稍候…';
+  try{
+    let user;
+    if(loginMode==='login'){
+      const r = await authCall('POST', '/auth/v1/token?grant_type=password', { email, password });
+      user = r.user;
+    } else {
+      const r = await authCall('POST', '/auth/v1/signup', { email, password });
+      user = r.user;
+      if(!r.access_token){ toast('注册成功，请查收邮箱确认（或在 Supabase 关闭邮箱确认后重试）'); }
+    }
+    if(!user || !user.email){ throw new Error('登录失败，未获取到用户信息'); }
+    saveSession({ email: user.email.toLowerCase(), uid: user.id });
+    toast(loginMode==='login' ? '登录成功' : '注册成功');
+    await route();
+  }catch(e){ toast(e.message); }
+  btn.disabled = false; setLoginMode(loginMode);
+}
+function logout(){
+  clearSession();
+  state.role = null; state.people = []; state.sessions = []; state.cur = null;
+  showScreen('screen-login');
+  setLoginMode('login');
+}
+
+/* ================= 路由：管理员 / 成员 / 未知 ================= */
+async function route(){
+  const email = state.session.email;
+  if(ADMIN_SET.has(email)){ await enterAdmin(); return; }
+  let p = null;
+  try { const rows = await api.findPeopleByEmail(email); p = rows[0]; }
+  catch(e){ toast(e.message); return; }
+  if(p){ await enterMember(p); }
+  else { enterUnknown(); }
+}
+function enterUnknown(){
+  state.role = 'unknown';
+  // 复用成员界面展示提示
+  showScreen('screen-member');
+  $('#member-hello').textContent = '未找到你的信息';
+  $('#member-sub').textContent = state.session.email;
+  $('#m-total').textContent = '—'; $('#m-present').textContent = '—'; $('#m-absent').textContent = '—';
+  $('#member-list').innerHTML = '<div class="empty"><span class="big">🤔</span>你的邮箱尚未关联到名单。<br>请联系管理员把你的邮箱加入人员名单。</div>';
+}
+
+/* ================= 管理员：人员 ================= */
+function parsePeople(text){
+  const out = [];
+  for(let raw of text.split(/\r?\n/)){
+    raw = raw.trim(); if(!raw) continue;
+    let name=null, sid=null, email='';
+    const parts = raw.split(/[,，、\t\s]+/).filter(Boolean);
+    // 邮箱：含 @ 的部分
+    const emailIdx = parts.findIndex(p => p.includes('@'));
+    if(emailIdx >= 0){ email = parts[emailIdx]; parts.splice(emailIdx,1); }
+    if(parts.length >= 2){
+      const sidIdx = parts.findIndex(p => /^[A-Za-z0-9]{4,}$/.test(p));
+      if(sidIdx >= 0){ sid = parts[sidIdx]; name = parts.filter((_,i)=>i!==sidIdx).join(''); }
+      else { name = parts[0]; sid = parts.slice(1).join(''); }
+    } else if(parts.length === 1){
+      const m = parts[0].match(/^(\D+)(\d[\dA-Za-z]*)$/);
+      if(m){ name = m[1]; sid = m[2]; }
+    }
+    if(name && sid) out.push({ name, sid, email: email.toLowerCase() });
+  }
+  return out;
+}
+async function loadPeople(){ state.people = await api.listPeople(); renderPeopleList(); }
+function renderPeopleList(){
+  const list = $('#people-list');
+  $('#people-count').textContent = state.people.length;
+  if(!state.people.length){ list.innerHTML = '<div class="empty"><span class="big">👥</span>还没有人员，请先录入</div>'; return; }
+  list.innerHTML = state.people.map((p,i)=>
+    `<div class="person-row">
+       <span class="idx">${i+1}</span>
+       <span class="nm">${escapeHtml(p.name)}</span>
+       <span class="sd">${escapeHtml(p.sid)}${p.email ? ' · '+escapeHtml(p.email) : ''}</span>
+       <button class="del" data-del="${p.id}" title="删除">×</button>
+     </div>`).join('');
+  list.querySelectorAll('[data-del]').forEach(b=>b.onclick = async e=>{
+    e.stopPropagation();
+    if(!confirm('删除该人员？（不影响已有签到历史）')) return;
+    await api.delPeople(b.dataset.del); toast('已删除'); loadPeople();
+  });
+}
+function renderPreview(){
+  const parsed = parsePeople($('#people-input').value);
+  const wrap = $('#people-preview-wrap');
+  if(!parsed.length){ wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
+  $('#people-preview').innerHTML = parsed.map((p,i)=>
+    `<div class="person-row"><span class="idx">${i+1}</span><span class="nm">${escapeHtml(p.name)}</span><span class="sd">${escapeHtml(p.sid)}${p.email?' · '+escapeHtml(p.email):''}</span></div>`).join('');
+  wrap._parsed = parsed;
+}
+async function savePeople(){
+  const parsed = renderPreviewRaw();
+  if(!parsed.length){ toast('请先解析人员'); return; }
+  const existing = new Set(state.people.map(p=>p.sid));
+  const rows = [];
+  parsed.forEach(p=>{ if(!existing.has(p.sid)){ existing.add(p.sid); rows.push(p); } });
+  if(!rows.length){ toast('没有新增人员（学号均已存在）'); return; }
+  const maxOrd = state.people.reduce((m,p)=>Math.max(m,p.ord||0), 0);
+  const toAdd = rows.map((p,i)=>({ name:p.name, sid:p.sid, email:p.email||null, ord: maxOrd + i + 1 }));
+  await api.addPeople(toAdd);
+  toast(`已新增 ${toAdd.length} 人`);
+  $('#people-input').value=''; $('#people-preview-wrap').classList.add('hidden');
+  loadPeople();
+}
+function renderPreviewRaw(){ return parsePeople($('#people-input').value); }
+
+/* ================= 管理员：签到 ================= */
+function curRec(){ return state.cur && state.cur.records[state.idx]; }
+function renderSignHint(){
+  $('#sign-hint').textContent = state.people.length
+    ? `本次将对当前名单 ${state.people.length} 人进行签到。`
+    : '⚠️ 当前名单为空，请先在「人员」页录入。';
+}
+async function startSign(){
+  if(!state.people.length){ toast('请先录入人员'); return; }
+  const sdate = $('#sign-date').value;
+  const period = document.querySelector('#sign-period button.active').dataset.period;
+  if(!sdate){ toast('请选择日期'); return; }
+  try{
+    let found = await api.findSession(sdate, period);
+    let session = found[0];
+    if(!session){
+      const created = await api.createSession(sdate, period);
+      session = created[0];
+      const rows = state.people.map((p,i)=>({
+        session_id: session.id, person_id: p.id, name: p.name, sid: p.sid, ord: i, status: '未到', note: ''
+      }));
+      await api.createRecords(rows);
+    }
+    const records = await api.listRecords(session.id);
+    state.cur = { session, records }; state.idx = 0;
+    showScreen('screen-signing'); renderSigning();
+  }catch(e){ toast(e.message); }
+}
+function renderSigning(){
+  const rec = curRec();
+  if(!rec){ toast('没有可签到的人员'); backToAdmin(); return; }
+  const n = state.cur.records.length;
+  $('#signing-label').textContent = `${state.cur.session.sdate} ${state.cur.session.period}`;
+  $('#signing-progress').textContent = `${state.idx+1} / ${n}`;
+  $('#signing-bar').style.width = Math.round((state.idx+1)/n*100) + '%';
+  $('#signing-name').textContent = rec.name;
+  $('#signing-sid').textContent = rec.sid;
+  $('#signing-note').value = rec.note || '';
+  $('#signing-prev').disabled = state.idx === 0;
+}
+async function flushCurrentNote(){
+  const rec = curRec(); if(!rec) return;
+  const v = $('#signing-note').value;
+  if(v !== (rec.note||'')){ rec.note = v; try{ await api.updateRecord(rec.id, {note:v}); }catch(e){} }
+}
+async function mark(status){
+  const rec = curRec(); if(!rec) return;
+  rec.status = status; rec.note = $('#signing-note').value;
+  try{ await api.updateRecord(rec.id, { status, note: rec.note }); }
+  catch(e){ toast(e.message); return; }
+  if(state.idx >= state.cur.records.length - 1){ toast('签到完成'); openSession(state.cur.session.id); }
+  else { state.idx++; renderSigning(); }
+}
+async function backToAdmin(){ try{ await flushCurrentNote(); }catch(e){} state.cur=null; state.idx=0; showScreen('screen-admin'); showMain('sign'); }
+
+/* ================= 管理员：会话详情 ================= */
+async function openSession(id){
+  try{
+    const session = (await db.req('GET', `sessions?id=eq.${enc(id)}&select=*`))[0];
+    const records = await api.listRecords(id);
+    state.cur = { session, records }; state.idx = 0;
+    showScreen('screen-session'); renderSession();
+  }catch(e){ toast(e.message); }
+}
+function renderSession(){
+  const { session, records } = state.cur;
+  const absent = records.filter(r=>r.status==='未到');
+  const present = records.filter(r=>r.status==='已到');
+  $('#session-title').textContent = `${session.sdate} ${session.period}`;
+  let html = `
+    <div class="stat-row">
+      <div class="stat total"><div class="num">${records.length}</div><div class="lbl">总人数</div></div>
+      <div class="stat present"><div class="num">${present.length}</div><div class="lbl">已到</div></div>
+      <div class="stat absent"><div class="num">${absent.length}</div><div class="lbl">未到</div></div>
+    </div>`;
+  html += `<div class="section-title">未到名单 <span class="tag">${absent.length} 人</span></div>`;
+  if(!absent.length){ html += `<div class="empty"><span class="big">🎉</span>全员到齐</div>`; }
+  else{
+    html += absent.map(r=>`
+      <div class="absent-item" data-edit="${r.id}">
+        <span class="nm">${escapeHtml(r.name)}</span>
+        <span class="sd">${escapeHtml(r.sid)}</span>
+        <span class="note">${r.note?escapeHtml(r.note):''}</span>
+        <span class="badge absent">未到</span>
+      </div>`).join('');
+    html += `<p class="hint">点击任一「未到」人员可修改其签到情况。</p>`;
+  }
+  html += `<div class="section-title">全部名单</div>`;
+  html += `<table class="roster-table"><thead><tr><th>姓名</th><th>学号</th><th>签到</th><th>备注</th></tr></thead><tbody>`;
+  html += records.map(r=>`
+    <tr data-edit="${r.id}" style="cursor:pointer;">
+      <td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.sid)}</td>
+      <td><span class="badge ${r.status==='已到'?'present':'absent'}">${r.status}</span></td>
+      <td>${escapeHtml(r.note||'')}</td>
+    </tr>`).join('');
+  html += `</tbody></table>`;
+  html += `<div class="row-2" style="margin-top:18px;">
+    <button class="btn" id="export-copy">复制名单</button>
+    <button class="btn" id="export-csv">下载 CSV</button>
+  </div>`;
+  $('#session-body').innerHTML = html;
+  $('#session-body').querySelectorAll('[data-edit]').forEach(el=>{ el.onclick = ()=>openEdit(el.dataset.edit); });
+  $('#export-copy').onclick = ()=>exportList('copy');
+  $('#export-csv').onclick = ()=>exportList('csv');
+  $('#session-del').onclick = async ()=>{
+    if(!confirm('删除本次签到记录（不可恢复）？')) return;
+    await api.delSession(session.id); toast('已删除');
+    showScreen('screen-admin'); showMain('history');
+  };
+}
+function buildListText(){
+  const { session, records } = state.cur;
+  const absent = records.filter(r=>r.status==='未到');
+  const present = records.filter(r=>r.status==='已到');
+  const lines = [];
+  lines.push(`签到名单　${session.sdate}　${session.period}`);
+  lines.push(`总人数 ${records.length}　已到 ${present.length}　未到 ${absent.length}`);
+  lines.push('');
+  lines.push('【未到名单】');
+  absent.forEach((r,i)=>lines.push(`${i+1}. ${r.name}　${r.sid}${r.note?'　备注：'+r.note:''}`));
+  if(!absent.length) lines.push('（无）');
+  lines.push('');
+  lines.push('【全部名单】');
+  lines.push('姓名\t学号\t签到情况\t备注');
+  records.forEach(r=>lines.push(`${r.name}\t${r.sid}\t${r.status}\t${r.note||''}`));
+  return lines.join('\n');
+}
+function buildCSV(){
+  const { session, records } = state.cur;
+  const rows = [['日期','时段','姓名','学号','签到情况','备注']];
+  records.forEach(r=>rows.push([session.sdate, session.period, r.name, r.sid, r.status, r.note||'']));
+  return '﻿' + rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+}
+async function exportList(mode){
+  if(mode==='copy'){
+    try{ await navigator.clipboard.writeText(buildListText()); toast('已复制，可粘贴到微信/Excel'); }
+    catch(e){ toast('复制失败'); }
+  } else {
+    const blob = new Blob([buildCSV()], {type:'text/csv;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `签到_${state.cur.session.sdate}_${state.cur.session.period}.csv`;
+    a.click(); URL.revokeObjectURL(a.href);
+  }
+}
+function openEdit(id){
+  const rec = state.cur.records.find(r=>r.id===id); if(!rec) return;
+  state.editId = id;
+  $('#edit-title').textContent = `修改 · ${rec.name}（${rec.sid}）`;
+  document.querySelectorAll('#edit-status button').forEach(b=>b.classList.toggle('active', b.dataset.status===rec.status));
+  $('#edit-note').value = rec.note||'';
+  $('#edit-mask').classList.remove('hidden');
+}
+async function saveEdit(){
+  const status = document.querySelector('#edit-status button.active').dataset.status;
+  const note = $('#edit-note').value;
+  try{
+    await api.updateRecord(state.editId, { status, note });
+    const rec = state.cur.records.find(r=>r.id===state.editId);
+    if(rec){ rec.status = status; rec.note = note; }
+    $('#edit-mask').classList.add('hidden'); toast('已更新'); renderSession();
+  }catch(e){ toast(e.message); }
+}
+
+/* ================= 管理员：记录/查询 ================= */
+async function renderHistory(){
+  const list = $('#hist-list');
+  try{ state.sessions = await api.listSessions(); }catch(e){ toast(e.message); return; }
+  const d = $('#hist-date').value;
+  let sessions = d ? state.sessions.filter(s=>s.sdate===d) : state.sessions;
+  if(!sessions.length){ list.innerHTML = `<div class="empty"><span class="big">📅</span>${d? d+' 暂无签到记录':'还没有任何签到记录'}</div>`; return; }
+  const items = await Promise.all(sessions.map(async s=>{
+    const rs = await api.listRecords(s.id);
+    return { s, total: rs.length, absent: rs.filter(r=>r.status==='未到').length, present: rs.filter(r=>r.status==='已到').length };
+  }));
+  list.innerHTML = items.map(({s,total,absent,present})=>`
+    <div class="session-item" data-id="${s.id}">
+      <div class="dt"><div class="d">${escapeHtml(s.sdate)}</div><div class="p">${escapeHtml(s.period)}</div></div>
+      <div class="cnt">共 ${total} 人<br>已到 <b style="color:var(--green)">${present}</b> · 未到 <b style="color:var(--red)">${absent}</b></div>
+    </div>`).join('');
+  list.querySelectorAll('.session-item').forEach(el=>{ el.onclick = ()=>openSession(el.dataset.id); });
+}
+
+/* ================= 成员：只读自己的记录 ================= */
+async function enterMember(p){
+  state.role = 'member'; state.member = p;
+  const sid = p.sid;
+  const [recs, sessions] = await Promise.all([api.listRecordsBySid(sid), api.listSessions()]);
+  const map = {}; sessions.forEach(s=>map[s.id]=s);
+  state.memberRecords = recs.map(r=>({...r, session: map[r.session_id]})).filter(r=>r.session)
+    .sort((a,b)=> a.session.sdate < b.session.sdate ? 1 : -1);
+  renderMember();
+  showScreen('screen-member');
+}
+function renderMember(){
+  const p = state.member, recs = state.memberRecords;
+  $('#member-hello').textContent = `你好，${p.name}`;
+  $('#member-sub').textContent = `${p.sid}`;
+  $('#m-total').textContent = recs.length;
+  $('#m-present').textContent = recs.filter(r=>r.status==='已到').length;
+  $('#m-absent').textContent = recs.filter(r=>r.status==='未到').length;
+  const list = $('#member-list');
+  if(!recs.length){ list.innerHTML = '<div class="empty"><span class="big">📭</span>暂无签到记录</div>'; return; }
+  list.innerHTML = recs.map(r=>`
+    <div class="record-row">
+      <div class="rr-dt"><div class="d">${escapeHtml(r.session.sdate)} ${escapeHtml(r.session.period)}</div>${r.note?`<div class="rr-note">备注：${escapeHtml(r.note)}</div>`:''}</div>
+      <span class="badge ${r.status==='已到'?'present':'absent'}">${r.status}</span>
+    </div>`).join('');
+}
+
+/* ================= 管理员主界面导航 ================= */
+function showMain(view){
+  showScreen('screen-admin');
+  ['people','sign','history'].forEach(v => $('#view-'+v).classList.toggle('hidden', v!==view));
+  document.querySelectorAll('#screen-admin .tabbar button').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
+  if(view==='sign'){ if(!$('#sign-date').value) $('#sign-date').value = todayStr(); renderSignHint(); }
+  if(view==='history'){ renderHistory(); }
+}
+async function enterAdmin(){
+  state.role = 'admin';
+  try{ await Promise.all([loadPeople(), api.listSessions().then(s=>state.sessions=s)]); }catch(e){ toast(e.message); }
+  $('#sign-date').value = todayStr();
+  showMain('people');
+}
+
+/* ================= 初始化 ================= */
+function bindEvents(){
+  // 登录
+  document.querySelectorAll('#login-mode button').forEach(b=>b.onclick=()=>setLoginMode(b.dataset.mode));
+  $('#login-submit').onclick = submitAuth;
+  $('#login-password').addEventListener('keydown', e=>{ if(e.key==='Enter') submitAuth(); });
+
+  // 人员
+  $('#people-parse').onclick = renderPreview;
+  $('#people-save').onclick = savePeople;
+  $('#people-clear').onclick = async ()=>{
+    if(!state.people.length){ toast('名单已为空'); return; }
+    if(!confirm(`确认清空全部 ${state.people.length} 名人员？（不影响已有签到历史）`)) return;
+    for(const p of state.people){ await api.delPeople(p.id); }
+    toast('已清空'); loadPeople();
+  };
+
+  // 签到
+  const seg = $('#sign-period');
+  seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{ seg.querySelectorAll('button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); });
+  $('#sign-start').onclick = startSign;
+
+  // 逐人签到
+  $('#signing-present').onclick = ()=>mark('已到');
+  $('#signing-absent').onclick = ()=>mark('未到');
+  $('#signing-prev').onclick = async ()=>{ await flushCurrentNote(); if(state.idx>0){ state.idx--; renderSigning(); } };
+  $('#signing-back').onclick = ()=>{ if(confirm('退出签到？已填写的进度会保留。')) backToAdmin(); };
+  $('#signing-done').onclick = ()=>openSession(state.cur.session.id);
+
+  // 会话详情
+  $('#session-back').onclick = ()=>{ showScreen('screen-admin'); showMain('history'); };
+
+  // 记录
+  $('#hist-clear').onclick = ()=>{ $('#hist-date').value=''; renderHistory(); };
+  $('#hist-date').onchange = renderHistory;
+
+  // 弹窗
+  $('#edit-save').onclick = saveEdit;
+  $('#edit-cancel').onclick = ()=>$('#edit-mask').classList.add('hidden');
+  $('#edit-mask').onclick = e=>{ if(e.target.id==='edit-mask') $('#edit-mask').classList.add('hidden'); };
+
+  // 退出
+  $('#admin-logout').onclick = ()=>{ if(confirm('退出登录？')) logout(); };
+  $('#member-logout').onclick = ()=>{ logout(); };
+
+  // 底部导航
+  document.querySelectorAll('#screen-admin .tabbar button').forEach(b=>b.onclick=()=>showMain(b.dataset.view));
+
+  window.addEventListener('keydown', e=>{ if(e.key==='Escape') $('#edit-mask').classList.add('hidden'); });
+}
+
+async function init(){
+  bindEvents();
+  setLoginMode('login');
+
+  // 注册 service worker（PWA 离线缓存，可选）
+  if('serviceWorker' in navigator){
+    try { navigator.serviceWorker.register('sw.js').catch(()=>{}); } catch(e){}
+  }
+
+  if(!SUPABASE_URL || !SUPABASE_ANON_KEY){
+    showScreen('screen-config');
+    return;
+  }
+  const s = loadSession();
+  if(s && s.email){
+    state.session = s;
+    try{ await route(); }catch(e){ toast(e.message); showScreen('screen-login'); }
+  } else {
+    showScreen('screen-login');
+  }
+}
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
