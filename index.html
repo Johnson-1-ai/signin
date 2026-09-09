@@ -712,13 +712,25 @@ async function flushCurrentNote(){
   const v = $('#signing-note').value;
   if(v !== (rec.note||'')){ rec.note = v; try{ await api.updateRecord(rec.id, {note:v}); }catch(e){} }
 }
+let marking = false;
 async function mark(status){
-  const rec = curRec(); if(!rec) return;
-  rec.status = status; rec.note = $('#signing-note').value;
-  try{ await api.updateRecord(rec.id, { status, note: rec.note }); }
-  catch(e){ toast(e.message); return; }
-  if(state.idx >= state.cur.records.length - 1){ toast('签到完成'); openSession(state.cur.session.id); }
-  else { state.idx++; renderSigning(); }
+  if(marking) return;               // 防连点：上一次还没处理完就忽略
+  marking = true;
+  try{
+    const rec = curRec(); if(!rec) return;
+    rec.status = status; rec.note = $('#signing-note').value;
+    const isLast = state.idx >= state.cur.records.length - 1;
+    const savePromise = api.updateRecord(rec.id, { status, note: rec.note }).catch(e=>toast(e.message));
+    if(isLast){
+      await savePromise;            // 最后一人等保存完成再跳结果，避免结果缺人
+      toast('签到完成');
+      openSession(state.cur.session.id);
+    } else {
+      state.idx++; renderSigning(); // 立即切到下一位，不卡顿、不跳号
+    }
+  } finally {
+    marking = false;
+  }
 }
 async function backToAdmin(){ try{ await flushCurrentNote(); }catch(e){} state.cur=null; state.idx=0; showScreen('screen-admin'); showMain('sign'); }
 
