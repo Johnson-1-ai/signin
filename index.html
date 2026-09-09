@@ -404,8 +404,8 @@ const api = {
   delPeople:    id => db.req('DELETE', `people?id=eq.${enc(id)}`),
   findPeopleByEmail: email => db.req('GET', `people?email=eq.${enc(email)}&select=*`),
   listSessions: () => db.req('GET', 'sessions?select=*&order=sdate.desc'),
-  findSession:  (sdate,period) => db.req('GET', `sessions?sdate=eq.${enc(sdate)}&period=eq.${enc(period)}&select=*`),
-  createSession:(sdate,period) => db.req('POST', 'sessions', [{sdate, period}]),
+  findSession:  (sdate,period,listName) => db.req('GET', `sessions?sdate=eq.${enc(sdate)}&period=eq.${enc(period)}&list_name=eq.${enc(listName||'')}&select=*`),
+  createSession:(sdate,period,listName) => db.req('POST', 'sessions', [{sdate, period, list_name: listName||''}]),
   delSession:   id => db.req('DELETE', `sessions?id=eq.${enc(id)}`),
   listRecords:  sessionId => db.req('GET', `records?session_id=eq.${enc(sessionId)}&select=*&order=ord.asc`),
   listRecordsBySid: sid => db.req('GET', `records?sid=eq.${enc(sid)}&select=*`),
@@ -680,12 +680,13 @@ async function startSign(){
   if(!state.people.length){ toast('请先录入人员'); return; }
   const sdate = $('#sign-date').value;
   const period = ($('#sign-period').value || '').trim() || '上午';
+  const listName = (state.lists.find(l=>l.id===state.currentListId)||{}).name || '';
   if(!sdate){ toast('请选择日期'); return; }
   try{
-    let found = await api.findSession(sdate, period);
+    let found = await api.findSession(sdate, period, listName);
     let session = found[0];
     if(!session){
-      const created = await api.createSession(sdate, period);
+      const created = await api.createSession(sdate, period, listName);
       session = created[0];
       const rows = state.people.map((p,i)=>({
         session_id: session.id, person_id: p.id, name: p.name, sid: p.sid, ord: i, status: '未到', note: ''
@@ -701,7 +702,7 @@ function renderSigning(){
   const rec = curRec();
   if(!rec){ toast('没有可签到的人员'); backToAdmin(); return; }
   const n = state.cur.records.length;
-  $('#signing-label').textContent = `${state.cur.session.sdate} ${state.cur.session.period}`;
+  $('#signing-label').textContent = `${state.cur.session.sdate} ${state.cur.session.period}${state.cur.session.list_name?' · '+state.cur.session.list_name:''}`;
   $('#signing-progress').textContent = `${state.idx+1} / ${n}`;
   $('#signing-bar').style.width = Math.round((state.idx+1)/n*100) + '%';
   $('#signing-name').textContent = rec.name;
@@ -749,7 +750,7 @@ function renderSession(){
   const { session, records } = state.cur;
   const absent = records.filter(r=>r.status==='未到');
   const present = records.filter(r=>r.status==='已到');
-  $('#session-title').textContent = `${session.sdate} ${session.period}`;
+  $('#session-title').textContent = `${session.sdate} ${session.period}${session.list_name?' · '+session.list_name:''}`;
   let html = `
     <div class="stat-row">
       <div class="stat total"><div class="num">${records.length}</div><div class="lbl">总人数</div></div>
@@ -797,7 +798,7 @@ function buildListText(){
   const absent = records.filter(r=>r.status==='未到');
   const present = records.filter(r=>r.status==='已到');
   const lines = [];
-  lines.push(`签到名单　${session.sdate}　${session.period}`);
+  lines.push(`签到名单　${session.sdate}　${session.period}${session.list_name?'　'+session.list_name:''}`);
   lines.push(`总人数 ${records.length}　已到 ${present.length}　未到 ${absent.length}`);
   lines.push('');
   lines.push('【未到名单】');
@@ -811,8 +812,8 @@ function buildListText(){
 }
 function buildCSV(){
   const { session, records } = state.cur;
-  const rows = [['日期','时段','姓名','学号','签到情况','签到时间','备注']];
-  records.forEach(r=>rows.push([session.sdate, session.period, r.name, r.sid, r.status, r.checkin_time?formatTime(r.checkin_time):'', r.note||'']));
+  const rows = [['日期','时段','人员名单','姓名','学号','签到情况','签到时间','备注']];
+  records.forEach(r=>rows.push([session.sdate, session.period, session.list_name||'', r.name, r.sid, r.status, r.checkin_time?formatTime(r.checkin_time):'', r.note||'']));
   return '﻿' + rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n');
 }
 async function exportList(mode){
@@ -859,7 +860,7 @@ async function renderHistory(){
   }));
   list.innerHTML = items.map(({s,total,absent,present})=>`
     <div class="session-item" data-id="${s.id}">
-      <div class="dt"><div class="d">${escapeHtml(s.sdate)}</div><div class="p">${escapeHtml(s.period)}</div></div>
+      <div class="dt"><div class="d">${escapeHtml(s.sdate)}</div><div class="p">${escapeHtml(s.period)}${s.list_name?' · '+escapeHtml(s.list_name):''}</div></div>
       <div class="cnt">共 ${total} 人<br>已到 <b style="color:var(--green)">${present}</b> · 未到 <b style="color:var(--red)">${absent}</b></div>
     </div>`).join('');
   list.querySelectorAll('.session-item').forEach(el=>{ el.onclick = ()=>openSession(el.dataset.id); });

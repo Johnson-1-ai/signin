@@ -28,8 +28,9 @@ create table if not exists sessions (
   id         uuid primary key default gen_random_uuid(),
   sdate      text not null,                 -- 日期，如 2026-09-08
   period     text not null,                 -- 名称/时段：上午 / 下午 / 晚自习 / 第3节课…
+  list_name  text,                          -- 本次使用的人员名单名称
   created_at timestamptz not null default now(),
-  unique (sdate, period)                    -- 同一天同一名称只允许一次签到
+  unique (sdate, period, list_name)         -- 同一天同一名称同一名单只允许一次签到
 );
 
 -- 4) 签到记录表（某次签到中，每个人的状态快照）
