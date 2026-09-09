@@ -199,10 +199,13 @@
       <div class="card">
         <h3>发起签到</h3>
         <div class="field"><label>日期</label><input type="date" id="sign-date"></div>
-        <div class="field"><label>时段</label>
-          <div class="seg" id="sign-period">
-            <button data-period="上午" class="active">上午</button>
-            <button data-period="下午">下午</button>
+        <div class="field"><label>名单名称 / 时段（可自定义文字）</label>
+          <input type="text" id="sign-period" value="上午" placeholder="如：上午、下午、晚自习、第3节课、补签…">
+          <div class="seg" id="sign-period-quick" style="margin-top:8px">
+            <button type="button" data-period="上午">上午</button>
+            <button type="button" data-period="下午">下午</button>
+            <button type="button" data-period="晚自习">晚自习</button>
+            <button type="button" data-period="补签">补签</button>
           </div>
         </div>
         <button class="btn" id="sign-start">开始签到</button>
@@ -587,7 +590,7 @@ function renderSignHint(){
 async function startSign(){
   if(!state.people.length){ toast('请先录入人员'); return; }
   const sdate = $('#sign-date').value;
-  const period = document.querySelector('#sign-period button.active').dataset.period;
+  const period = ($('#sign-period').value || '').trim() || '上午';
   if(!sdate){ toast('请选择日期'); return; }
   try{
     let found = await api.findSession(sdate, period);
@@ -845,9 +848,8 @@ function bindEvents(){
     toast('已清空'); loadPeople();
   };
 
-  // 签到
-  const seg = $('#sign-period');
-  seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{ seg.querySelectorAll('button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); });
+  // 签到：快捷名称按钮填入输入框
+  $('#sign-period-quick').querySelectorAll('button').forEach(b=>b.onclick=()=>{ $('#sign-period').value = b.dataset.period; });
   $('#sign-start').onclick = startSign;
 
   // 逐人签到
