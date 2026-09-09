@@ -48,7 +48,7 @@
   button.btn.secondary{background:#eef1f5; color:var(--text);}
   button.btn.danger{background:var(--red-bg); color:var(--red);}
   button.btn:disabled{opacity:.5; cursor:not-allowed;}
-  input[type=text],input[type=password],input[type=email],input[type=date],textarea{
+  input[type=text],input[type=password],input[type=email],input[type=date],textarea,select{
     width:100%; border:1px solid var(--line); border-radius:10px; padding:11px 12px; font-size:16px; font-family:inherit; background:#fff; color:var(--text);
   }
   textarea{resize:vertical; min-height:110px;}
@@ -68,6 +68,10 @@
   .empty{text-align:center; color:var(--muted); padding:28px 10px; font-size:15px;}
   .empty .big{font-size:40px; display:block; margin-bottom:8px;}
   .hint{font-size:12px; color:var(--muted); margin-top:6px; line-height:1.6;}
+  .list-selector{display:flex; flex-wrap:wrap; gap:8px;}
+  .chip{padding:7px 16px; border-radius:18px; border:1px solid var(--line); background:#f8f9fb; font-size:14px; cursor:pointer; color:var(--text);}
+  .chip.active{background:var(--brand); color:#fff; border-color:var(--brand); font-weight:600;}
+  .chip.add{background:#fff; border-style:dashed; color:var(--muted);}
   /* ===== 登录 ===== */
   #screen-login{max-width:420px; margin:0 auto; padding:40px 24px;}
   .login-logo{text-align:center; font-size:56px; margin:10px 0 2px;}
@@ -178,6 +182,14 @@
     <!-- 人员 -->
     <div id="view-people" class="content">
       <div class="card">
+        <h3>人员名单</h3>
+        <div class="list-selector" id="list-selector"></div>
+        <div class="row-2" style="margin-top:10px">
+          <button class="btn secondary" id="list-rename">重命名</button>
+          <button class="btn danger" id="list-delete">删除名单</button>
+        </div>
+      </div>
+      <div class="card">
         <h3>批量录入人员（每行一人）</h3>
         <textarea id="people-input" placeholder="张三 2023001 zhang@example.com&#10;李四 2023002 li@example.com&#10;王五 2023003"></textarea>
         <p class="hint">格式「姓名 学号 [邮箱]」，姓名学号之间用空格或逗号分隔，邮箱选填；填了邮箱该学生才能登录查看自己的记录。</p>
@@ -190,7 +202,7 @@
       <div class="card">
         <h3>当前名单（<span id="people-count">0</span> 人）</h3>
         <div class="person-list" id="people-list"></div>
-        <button class="btn danger" id="people-clear" style="margin-top:12px;">清空全部人员</button>
+        <button class="btn danger" id="people-clear" style="margin-top:12px;">清空当前名单</button>
       </div>
     </div>
 
@@ -198,6 +210,7 @@
     <div id="view-sign" class="content hidden">
       <div class="card">
         <h3>发起签到</h3>
+        <div class="field"><label>选择人员名单</label><select id="sign-list"></select></div>
         <div class="field"><label>日期</label><input type="date" id="sign-date"></div>
         <div class="field"><label>名单名称 / 时段（可自定义文字）</label>
           <input type="text" id="sign-period" value="上午" placeholder="如：上午、下午、晚自习、第3节课、补签…">
@@ -381,7 +394,11 @@ const db = {
   }
 };
 const api = {
-  listPeople:   () => db.req('GET', 'people?select=*&order=ord.asc'),
+  listLists:    () => db.req('GET', 'lists?select=*&order=ord.asc'),
+  createList:   (name, ord) => db.req('POST', 'lists', [{name, ord}]),
+  renameList:   (id, name) => db.req('PATCH', `lists?id=eq.${enc(id)}`, {name}),
+  deleteList:   (id) => db.req('DELETE', `lists?id=eq.${enc(id)}`),
+  listPeople:   (listId) => db.req('GET', `people?list_id=eq.${enc(listId)}&select=*&order=ord.asc`),
   addPeople:    rows => db.req('POST', 'people', rows),
   delPeople:    id => db.req('DELETE', `people?id=eq.${enc(id)}`),
   findPeopleByEmail: email => db.req('GET', `people?email=eq.${enc(email)}&select=*`),
@@ -451,7 +468,7 @@ async function doChangePwd(){
   btn.disabled = false; btn.textContent = '确认修改';
 }
 const SESSION_KEY = 'signin_session';
-const state = { session:null, role:null, people:[], sessions:[], cur:null, idx:0, editId:null, member:null, memberRecords:[] };
+const state = { session:null, role:null, people:[], lists:[], currentListId:null, sessions:[], cur:null, idx:0, editId:null, member:null, memberRecords:[] };
 function loadSession(){ try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch(e){ return null; } }
 function saveSession(s){ state.session = s; localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
 function clearSession(){ state.session = null; localStorage.removeItem(SESSION_KEY); }
@@ -537,7 +554,77 @@ function parsePeople(text){
   }
   return out;
 }
-async function loadPeople(){ state.people = await api.listPeople(); renderPeopleList(); }
+async function loadLists(){
+  state.lists = await api.listLists();
+  if(!state.lists.length){
+    const created = await api.createList('默认名单', 0);
+    state.lists = created;
+  }
+  if(!state.currentListId || !state.lists.find(l=>l.id===state.currentListId)){
+    state.currentListId = state.lists[0] ? state.lists[0].id : null;
+  }
+  renderListSelector();
+  renderSignListSelector();
+}
+function renderListSelector(){
+  const el = $('#list-selector');
+  if(!el) return;
+  el.innerHTML = state.lists.map(l=>
+    `<button class="chip ${l.id===state.currentListId?'active':''}" data-list="${l.id}">${escapeHtml(l.name)}</button>`
+  ).join('') + `<button class="chip add" id="list-add">＋ 新建</button>`;
+  el.querySelectorAll('[data-list]').forEach(b=>b.onclick=()=>switchList(b.dataset.list));
+  const add = el.querySelector('#list-add');
+  if(add) add.onclick = newList;
+}
+function renderSignListSelector(){
+  const sel = $('#sign-list');
+  if(!sel) return;
+  sel.innerHTML = state.lists.map(l=>`<option value="${l.id}" ${l.id===state.currentListId?'selected':''}>${escapeHtml(l.name)}</option>`).join('');
+}
+async function switchList(id){
+  if(!id || id === state.currentListId) return;
+  state.currentListId = id;
+  await loadPeople();
+  renderListSelector();
+  renderSignListSelector();
+  renderSignHint();
+}
+async function newList(){
+  const name = (prompt('新名单名称：')||'').trim();
+  if(!name) return;
+  const maxOrd = state.lists.reduce((m,l)=>Math.max(m,l.ord||0),0);
+  const created = await api.createList(name, maxOrd+1);
+  state.lists.push(created[0]);
+  state.currentListId = created[0].id;
+  renderListSelector(); renderSignListSelector();
+  state.people = []; renderPeopleList(); renderSignHint();
+}
+async function renameList(){
+  const l = state.lists.find(x=>x.id===state.currentListId);
+  if(!l) return;
+  const name = (prompt('重命名名单：', l.name)||'').trim();
+  if(!name || name===l.name) return;
+  await api.renameList(l.id, name);
+  l.name = name;
+  renderListSelector(); renderSignListSelector();
+}
+async function deleteList(){
+  const l = state.lists.find(x=>x.id===state.currentListId);
+  if(!l) return;
+  if(!confirm(`删除名单「${l.name}」？名单内 ${state.people.length} 人将一并删除（不影响已有签到历史）。`)) return;
+  for(const p of state.people){ await api.delPeople(p.id); }
+  await api.deleteList(l.id);
+  state.lists = state.lists.filter(x=>x.id!==l.id);
+  state.currentListId = state.lists[0] ? state.lists[0].id : null;
+  renderListSelector(); renderSignListSelector();
+  await loadPeople();
+  renderSignHint();
+}
+async function loadPeople(){
+  if(!state.currentListId){ state.people = []; renderPeopleList(); return; }
+  state.people = await api.listPeople(state.currentListId);
+  renderPeopleList();
+}
 function renderPeopleList(){
   const list = $('#people-list');
   $('#people-count').textContent = state.people.length;
@@ -572,7 +659,7 @@ async function savePeople(){
   parsed.forEach(p=>{ if(!existing.has(p.sid)){ existing.add(p.sid); rows.push(p); } });
   if(!rows.length){ toast('没有新增人员（学号均已存在）'); return; }
   const maxOrd = state.people.reduce((m,p)=>Math.max(m,p.ord||0), 0);
-  const toAdd = rows.map((p,i)=>({ name:p.name, sid:p.sid, email:p.email||null, ord: maxOrd + i + 1 }));
+  const toAdd = rows.map((p,i)=>({ name:p.name, sid:p.sid, email:p.email||null, list_id: state.currentListId, ord: maxOrd + i + 1 }));
   await api.addPeople(toAdd);
   toast(`已新增 ${toAdd.length} 人`);
   $('#people-input').value=''; $('#people-preview-wrap').classList.add('hidden');
@@ -800,7 +887,11 @@ function showMain(view){
 }
 async function enterAdmin(){
   state.role = 'admin';
-  try{ await Promise.all([loadPeople(), api.listSessions().then(s=>state.sessions=s)]); }catch(e){ toast(e.message); }
+  try{
+    await loadLists();
+    await loadPeople();
+    state.sessions = await api.listSessions();
+  }catch(e){ toast(e.message); }
   $('#sign-date').value = todayStr();
   showMain('people');
 }
@@ -843,13 +934,16 @@ function bindEvents(){
   $('#people-save').onclick = savePeople;
   $('#people-clear').onclick = async ()=>{
     if(!state.people.length){ toast('名单已为空'); return; }
-    if(!confirm(`确认清空全部 ${state.people.length} 名人员？（不影响已有签到历史）`)) return;
+    if(!confirm(`确认清空当前名单的 ${state.people.length} 人？（不影响已有签到历史）`)) return;
     for(const p of state.people){ await api.delPeople(p.id); }
     toast('已清空'); loadPeople();
   };
+  $('#list-rename').onclick = renameList;
+  $('#list-delete').onclick = deleteList;
 
   // 签到：快捷名称按钮填入输入框
   $('#sign-period-quick').querySelectorAll('button').forEach(b=>b.onclick=()=>{ $('#sign-period').value = b.dataset.period; });
+  $('#sign-list').onchange = ()=>switchList($('#sign-list').value);
   $('#sign-start').onclick = startSign;
 
   // 逐人签到
