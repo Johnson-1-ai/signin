@@ -42,6 +42,7 @@ create table if not exists records (
   ord        int  not null default 0,       -- 该次签到内的顺序
   status     text not null default '未到',  -- 已到 / 未到
   note       text not null default '',      -- 备注
+  checkin_time timestamptz,                 -- 学生自助签到时间
   updated_at timestamptz not null default now()
 );
 

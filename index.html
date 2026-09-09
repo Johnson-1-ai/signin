@@ -253,6 +253,7 @@
       <button class="logout" id="member-logout">退出</button>
     </div>
     <div class="content" style="padding-bottom:30px;">
+      <div id="member-checkin"></div>
       <div class="card" style="text-align:center; padding:22px;">
         <div style="font-size:40px;">🙋</div>
         <div style="font-size:20px; font-weight:700; margin-top:6px;" id="member-hello"></div>
@@ -409,7 +410,8 @@ const api = {
   listRecords:  sessionId => db.req('GET', `records?session_id=eq.${enc(sessionId)}&select=*&order=ord.asc`),
   listRecordsBySid: sid => db.req('GET', `records?sid=eq.${enc(sid)}&select=*`),
   createRecords: rows => db.req('POST', 'records', rows),
-  updateRecord: (id, patch) => db.req('PATCH', `records?id=eq.${enc(id)}`, patch)
+  updateRecord: (id, patch) => db.req('PATCH', `records?id=eq.${enc(id)}`, patch),
+  checkin: (id) => db.req('PATCH', `records?id=eq.${enc(id)}`, { status: '已到', checkin_time: new Date().toISOString() })
 };
 
 /* ================= 账号（Supabase Auth / GoTrue）================= */
@@ -468,7 +470,7 @@ async function doChangePwd(){
   btn.disabled = false; btn.textContent = '确认修改';
 }
 const SESSION_KEY = 'signin_session';
-const state = { session:null, role:null, people:[], lists:[], currentListId:null, sessions:[], cur:null, idx:0, editId:null, member:null, memberRecords:[] };
+const state = { session:null, role:null, people:[], lists:[], currentListId:null, sessions:[], cur:null, idx:0, editId:null, member:null, memberRecords:[], activeSession:null, activeRecord:null };
 function loadSession(){ try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch(e){ return null; } }
 function saveSession(s){ state.session = s; localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
 function clearSession(){ state.session = null; localStorage.removeItem(SESSION_KEY); }
@@ -767,11 +769,12 @@ function renderSession(){
     html += `<p class="hint">点击任一「未到」人员可修改其签到情况。</p>`;
   }
   html += `<div class="section-title">全部名单</div>`;
-  html += `<table class="roster-table"><thead><tr><th>姓名</th><th>学号</th><th>签到</th><th>备注</th></tr></thead><tbody>`;
+  html += `<table class="roster-table"><thead><tr><th>姓名</th><th>学号</th><th>签到</th><th>时间</th><th>备注</th></tr></thead><tbody>`;
   html += records.map(r=>`
     <tr data-edit="${r.id}" style="cursor:pointer;">
       <td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.sid)}</td>
       <td><span class="badge ${r.status==='已到'?'present':'absent'}">${r.status}</span></td>
+      <td style="color:var(--muted);font-size:12px;">${r.checkin_time?formatTime(r.checkin_time):''}</td>
       <td>${escapeHtml(r.note||'')}</td>
     </tr>`).join('');
   html += `</tbody></table>`;
@@ -802,14 +805,14 @@ function buildListText(){
   if(!absent.length) lines.push('（无）');
   lines.push('');
   lines.push('【全部名单】');
-  lines.push('姓名\t学号\t签到情况\t备注');
-  records.forEach(r=>lines.push(`${r.name}\t${r.sid}\t${r.status}\t${r.note||''}`));
+  lines.push('姓名\t学号\t签到情况\t签到时间\t备注');
+  records.forEach(r=>lines.push(`${r.name}\t${r.sid}\t${r.status}\t${r.checkin_time?formatTime(r.checkin_time):''}\t${r.note||''}`));
   return lines.join('\n');
 }
 function buildCSV(){
   const { session, records } = state.cur;
-  const rows = [['日期','时段','姓名','学号','签到情况','备注']];
-  records.forEach(r=>rows.push([session.sdate, session.period, r.name, r.sid, r.status, r.note||'']));
+  const rows = [['日期','时段','姓名','学号','签到情况','签到时间','备注']];
+  records.forEach(r=>rows.push([session.sdate, session.period, r.name, r.sid, r.status, r.checkin_time?formatTime(r.checkin_time):'', r.note||'']));
   return '﻿' + rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n');
 }
 async function exportList(mode){
@@ -870,6 +873,10 @@ async function enterMember(p){
   const map = {}; sessions.forEach(s=>map[s.id]=s);
   state.memberRecords = recs.map(r=>({...r, session: map[r.session_id]})).filter(r=>r.session)
     .sort((a,b)=> a.session.sdate < b.session.sdate ? 1 : -1);
+  // 当前进行中的签到：最新创建的场次里，该学生的记录
+  const latest = [...sessions].sort((a,b)=> (b.created_at||'').localeCompare(a.created_at||''))[0];
+  state.activeSession = latest || null;
+  state.activeRecord = latest ? (recs.find(r=>r.session_id===latest.id) || null) : null;
   renderMember();
   showScreen('screen-member');
 }
@@ -880,13 +887,52 @@ function renderMember(){
   $('#m-total').textContent = recs.length;
   $('#m-present').textContent = recs.filter(r=>r.status==='已到').length;
   $('#m-absent').textContent = recs.filter(r=>r.status==='未到').length;
+  renderCheckin();
   const list = $('#member-list');
   if(!recs.length){ list.innerHTML = '<div class="empty"><span class="big">📭</span>暂无签到记录</div>'; return; }
   list.innerHTML = recs.map(r=>`
     <div class="record-row">
-      <div class="rr-dt"><div class="d">${escapeHtml(r.session.sdate)} ${escapeHtml(r.session.period)}</div>${r.note?`<div class="rr-note">备注：${escapeHtml(r.note)}</div>`:''}</div>
+      <div class="rr-dt"><div class="d">${escapeHtml(r.session.sdate)} ${escapeHtml(r.session.period)}</div>${r.checkin_time?`<div class="rr-note">签到时间：${formatTime(r.checkin_time)}</div>`:''}${r.note?`<div class="rr-note">备注：${escapeHtml(r.note)}</div>`:''}</div>
       <span class="badge ${r.status==='已到'?'present':'absent'}">${r.status}</span>
     </div>`).join('');
+}
+function formatTime(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  if(isNaN(d)) return '';
+  const p = n => String(n).padStart(2,'0');
+  return `${d.getMonth()+1}月${d.getDate()}日 ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+function renderCheckin(){
+  const el = $('#member-checkin');
+  const a = state.activeSession, r = state.activeRecord;
+  if(!a || !r){ el.innerHTML = ''; return; }
+  if(r.status === '已到'){
+    el.innerHTML = `
+      <div class="card" style="text-align:center; border:1px solid var(--green);">
+        <div class="card-title">当前签到 · ${escapeHtml(a.sdate)} ${escapeHtml(a.period)}</div>
+        <div style="font-size:26px; font-weight:700; color:var(--green);">✅ 已签到${r.checkin_time ? ' · ' + formatTime(r.checkin_time) : ''}</div>
+      </div>`;
+  } else {
+    el.innerHTML = `
+      <div class="card" style="text-align:center; border:1px solid var(--brand);">
+        <div class="card-title">当前签到 · ${escapeHtml(a.sdate)} ${escapeHtml(a.period)}</div>
+        <div style="font-size:15px; color:var(--muted); margin-bottom:12px;">请在教室点击下方按钮完成签到</div>
+        <button class="btn" id="member-checkin-btn" style="background:var(--green);">✅ 立即签到</button>
+      </div>`;
+    const btn = el.querySelector('#member-checkin-btn');
+    if(btn) btn.onclick = doCheckin;
+  }
+}
+async function doCheckin(){
+  const r = state.activeRecord;
+  if(!r) return;
+  try{
+    await api.checkin(r.id);
+    r.status = '已到'; r.checkin_time = new Date().toISOString();
+    toast('签到成功 ✅');
+    renderMember();
+  }catch(e){ toast(e.message); }
 }
 
 /* ================= 管理员主界面导航 ================= */
