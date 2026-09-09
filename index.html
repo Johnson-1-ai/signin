@@ -594,6 +594,7 @@ async function switchList(id){
 async function newList(){
   const name = (prompt('新名单名称：')||'').trim();
   if(!name) return;
+  if(state.lists.some(l => (l.name||'').trim().toLowerCase() === name.toLowerCase())){ toast('该名单已存在，不能创建'); return; }
   const maxOrd = state.lists.reduce((m,l)=>Math.max(m,l.ord||0),0);
   const created = await api.createList(name, maxOrd+1);
   state.lists.push(created[0]);
@@ -606,6 +607,7 @@ async function renameList(){
   if(!l) return;
   const name = (prompt('重命名名单：', l.name)||'').trim();
   if(!name || name===l.name) return;
+  if(state.lists.some(x => x.id!==l.id && (x.name||'').trim().toLowerCase() === name.toLowerCase())){ toast('该名单名已存在，不能重命名'); return; }
   await api.renameList(l.id, name);
   l.name = name;
   renderListSelector(); renderSignListSelector();
