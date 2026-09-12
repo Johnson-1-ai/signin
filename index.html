@@ -229,12 +229,6 @@
     <!-- 记录 -->
     <div id="view-history" class="content hidden">
       <div class="card">
-        <h3>合并表</h3>
-        <div class="field"><label>选择人员名单</label><select id="merge-list"></select></div>
-        <button class="btn" id="merge-generate">生成合并表</button>
-        <div id="merge-result" style="margin-top:14px; overflow-x:auto;"></div>
-      </div>
-      <div class="card">
         <h3>按日期查询</h3>
         <div class="row-2">
           <input type="date" id="hist-date">
@@ -349,6 +343,17 @@
     <h3>📲 安装应用</h3>
     <div id="install-steps" style="font-size:15px; line-height:1.9;"></div>
     <button class="btn secondary" id="install-close" style="margin-top:8px;">知道了</button>
+  </div>
+</div>
+
+<!-- 合并表弹窗 -->
+<div class="modal-mask hidden" id="merge-mask">
+  <div class="modal">
+    <h3>📊 合并表</h3>
+    <div class="field"><label>选择人员名单</label><select id="merge-list"></select></div>
+    <button class="btn" id="merge-generate">生成合并表</button>
+    <div id="merge-result" style="margin-top:14px; overflow-x:auto; max-height:55vh; overflow-y:auto;"></div>
+    <button class="btn secondary" id="merge-close" style="margin-top:10px;">关闭</button>
   </div>
 </div>
 
@@ -867,12 +872,18 @@ async function renderHistory(){
     const rs = await api.listRecords(s.id);
     return { s, total: rs.length, absent: rs.filter(r=>r.status==='未到').length, present: rs.filter(r=>r.status==='已到').length };
   }));
-  list.innerHTML = items.map(({s,total,absent,present})=>`
+  list.innerHTML = `
+    <div class="session-item" id="merge-entry" style="border:1px solid var(--brand);">
+      <div class="dt"><div class="d">📊 合并表</div><div class="p">汇总每人各场签到情况 + 未到次数</div></div>
+      <span style="color:var(--brand);font-weight:700;">›</span>
+    </div>` + items.map(({s,total,absent,present})=>`
     <div class="session-item" data-id="${s.id}">
       <div class="dt"><div class="d">${escapeHtml(s.sdate)}</div><div class="p">${escapeHtml(s.period)}${s.list_name?' · '+escapeHtml(s.list_name):''}</div></div>
       <div class="cnt">共 ${total} 人<br>已到 <b style="color:var(--green)">${present}</b> · 未到 <b style="color:var(--red)">${absent}</b></div>
     </div>`).join('');
-  list.querySelectorAll('.session-item').forEach(el=>{ el.onclick = ()=>openSession(el.dataset.id); });
+  list.querySelectorAll('.session-item[data-id]').forEach(el=>{ el.onclick = ()=>openSession(el.dataset.id); });
+  const me = list.querySelector('#merge-entry');
+  if(me) me.onclick = openMergeTable;
 }
 function shortDate(sdate){
   if(!sdate) return '';
@@ -883,6 +894,14 @@ function renderMergeListSelector(){
   const sel = $('#merge-list');
   if(!sel) return;
   sel.innerHTML = state.lists.map(l=>`<option value="${l.id}" ${l.id===state.currentListId?'selected':''}>${escapeHtml(l.name)}</option>`).join('');
+}
+function openMergeTable(){
+  renderMergeListSelector();
+  $('#merge-result').innerHTML = '';
+  $('#merge-mask').classList.remove('hidden');
+}
+function closeMergeTable(){
+  $('#merge-mask').classList.add('hidden');
 }
 let mergeData = null;
 async function generateMergeTable(){
@@ -1093,6 +1112,8 @@ function bindEvents(){
   $('#hist-clear').onclick = ()=>{ $('#hist-date').value=''; renderHistory(); };
   $('#hist-date').onchange = renderHistory;
   $('#merge-generate').onclick = generateMergeTable;
+  $('#merge-close').onclick = closeMergeTable;
+  $('#merge-mask').onclick = e=>{ if(e.target.id==='merge-mask') closeMergeTable(); };
 
   // 弹窗
   // 编辑弹窗：点击「已到/未到」切换选中状态
