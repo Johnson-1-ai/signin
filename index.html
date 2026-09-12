@@ -884,6 +884,7 @@ function renderMergeListSelector(){
   if(!sel) return;
   sel.innerHTML = state.lists.map(l=>`<option value="${l.id}" ${l.id===state.currentListId?'selected':''}>${escapeHtml(l.name)}</option>`).join('');
 }
+let mergeData = null;
 async function generateMergeTable(){
   const listId = $('#merge-list').value;
   const list = state.lists.find(l=>l.id===listId);
@@ -897,22 +898,46 @@ async function generateMergeTable(){
     if(!sessions.length){ $('#merge-result').innerHTML = '<div class="empty">该名单还没有签到记录</div>'; return; }
     const recsBySession = {};
     for(const s of sessions){ recsBySession[s.id] = await api.listRecords(s.id); }
+    const rows = people.map(p => {
+      const cells = sessions.map(s => {
+        const rec = (recsBySession[s.id]||[]).find(r=>r.sid===p.sid);
+        return rec ? rec.status : '';
+      });
+      return { p, cells, absentCount: cells.filter(c=>c==='未到').length };
+    });
+    mergeData = { list, sessions, rows };
     let html = '<table class="roster-table" style="min-width:100%;"><thead><tr><th>姓名</th><th>学号</th>';
     for(const s of sessions){ html += `<th style="text-align:center;">${shortDate(s.sdate)}<br>${escapeHtml(s.period)}</th>`; }
-    html += '</tr></thead><tbody>';
-    for(const p of people){
-      html += `<tr><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.sid)}</td>`;
-      for(const s of sessions){
-        const rec = (recsBySession[s.id]||[]).find(r=>r.sid===p.sid);
-        if(rec && rec.status==='已到'){ html += '<td style="text-align:center;color:#000;font-size:16px;">✓</td>'; }
-        else if(rec && rec.status==='未到'){ html += '<td style="text-align:center;color:#dc2626;font-size:16px;font-weight:700;">✘</td>'; }
+    html += '<th style="text-align:center;">未到次数</th></tr></thead><tbody>';
+    for(const row of rows){
+      html += `<tr><td>${escapeHtml(row.p.name)}</td><td>${escapeHtml(row.p.sid)}</td>`;
+      for(const c of row.cells){
+        if(c==='已到'){ html += '<td style="text-align:center;color:#000;font-size:16px;">✓</td>'; }
+        else if(c==='未到'){ html += '<td style="text-align:center;color:#dc2626;font-size:16px;font-weight:700;">✘</td>'; }
         else { html += '<td style="text-align:center;color:#c1c6cd;">·</td>'; }
       }
-      html += '</tr>';
+      html += `<td style="text-align:center;font-weight:700;color:${row.absentCount>0?'#dc2626':'#8a919b'};">${row.absentCount}</td></tr>`;
     }
-    html += '</tbody></table><p class="hint">✓ 已到（黑色）　✘ 未到（红色）</p>';
+    html += '</tbody></table><p class="hint">✓ 已到　✘ 未到　· 无记录</p>';
+    html += '<button class="btn secondary" id="merge-download" style="margin-top:10px;">下载合并表（CSV）</button>';
     $('#merge-result').innerHTML = html;
+    $('#merge-download').onclick = downloadMergeTable;
   }catch(e){ toast(e.message); }
+}
+function downloadMergeTable(){
+  if(!mergeData) return;
+  const { list, sessions, rows } = mergeData;
+  const header = ['姓名','学号', ...sessions.map(s=>`${shortDate(s.sdate)} ${s.period}`), '未到次数'];
+  const csvRows = [header];
+  for(const row of rows){
+    csvRows.push([row.p.name, row.p.sid, ...row.cells.map(c=>c==='已到'?'✓':(c==='未到'?'✘':'')), row.absentCount]);
+  }
+  const csv = '﻿' + csvRows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `合并表_${list.name}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
 }
 
 /* ================= 成员：只读自己的记录 ================= */
