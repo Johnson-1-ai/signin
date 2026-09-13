@@ -235,7 +235,13 @@
           <button class="btn secondary" id="hist-clear" style="flex:0 0 80px;">全部</button>
         </div>
       </div>
+      <div class="section-title">普通签到</div>
       <div id="hist-list"></div>
+      <div class="section-title">合并表</div>
+      <div class="card" style="padding:14px;">
+        <button class="btn" id="merge-new">生成新合并表</button>
+        <div id="merge-saved-list" style="margin-top:12px;"></div>
+      </div>
     </div>
 
     <div class="tabbar">
@@ -349,9 +355,11 @@
 <!-- 合并表弹窗 -->
 <div class="modal-mask hidden" id="merge-mask">
   <div class="modal">
-    <h3>📊 合并表</h3>
-    <div class="field"><label>选择人员名单</label><select id="merge-list"></select></div>
-    <button class="btn" id="merge-generate">生成合并表</button>
+    <h3 id="merge-title">📊 生成合并表</h3>
+    <div id="merge-generate-area">
+      <div class="field"><label>选择人员名单</label><select id="merge-list"></select></div>
+      <button class="btn" id="merge-generate">生成合并表</button>
+    </div>
     <div id="merge-result" style="margin-top:14px; overflow-x:auto; max-height:55vh; overflow-y:auto;"></div>
     <button class="btn secondary" id="merge-close" style="margin-top:10px;">关闭</button>
   </div>
@@ -410,6 +418,9 @@ const api = {
   createList:   (name, ord) => db.req('POST', 'lists', [{name, ord}]),
   renameList:   (id, name) => db.req('PATCH', `lists?id=eq.${enc(id)}`, {name}),
   deleteList:   (id) => db.req('DELETE', `lists?id=eq.${enc(id)}`),
+  listMergeTables: () => db.req('GET', 'merge_tables?select=*&order=created_at.desc'),
+  createMergeTable: (listName, data) => db.req('POST', 'merge_tables', [{list_name: listName, data}]),
+  deleteMergeTable: (id) => db.req('DELETE', `merge_tables?id=eq.${enc(id)}`),
   listPeople:   (listId) => db.req('GET', `people?list_id=eq.${enc(listId)}&select=*&order=ord.asc`),
   addPeople:    rows => db.req('POST', 'people', rows),
   delPeople:    id => db.req('DELETE', `people?id=eq.${enc(id)}`),
@@ -872,18 +883,12 @@ async function renderHistory(){
     const rs = await api.listRecords(s.id);
     return { s, total: rs.length, absent: rs.filter(r=>r.status==='未到').length, present: rs.filter(r=>r.status==='已到').length };
   }));
-  list.innerHTML = `
-    <div class="session-item" id="merge-entry" style="border:1px solid var(--brand);">
-      <div class="dt"><div class="d">📊 合并表</div><div class="p">汇总每人各场签到情况 + 未到次数</div></div>
-      <span style="color:var(--brand);font-weight:700;">›</span>
-    </div>` + items.map(({s,total,absent,present})=>`
+  list.innerHTML = items.map(({s,total,absent,present})=>`
     <div class="session-item" data-id="${s.id}">
       <div class="dt"><div class="d">${escapeHtml(s.sdate)}</div><div class="p">${escapeHtml(s.period)}${s.list_name?' · '+escapeHtml(s.list_name):''}</div></div>
       <div class="cnt">共 ${total} 人<br>已到 <b style="color:var(--green)">${present}</b> · 未到 <b style="color:var(--red)">${absent}</b></div>
     </div>`).join('');
-  list.querySelectorAll('.session-item[data-id]').forEach(el=>{ el.onclick = ()=>openSession(el.dataset.id); });
-  const me = list.querySelector('#merge-entry');
-  if(me) me.onclick = openMergeTable;
+  list.querySelectorAll('.session-item').forEach(el=>{ el.onclick = ()=>openSession(el.dataset.id); });
 }
 function shortDate(sdate){
   if(!sdate) return '';
@@ -895,15 +900,69 @@ function renderMergeListSelector(){
   if(!sel) return;
   sel.innerHTML = state.lists.map(l=>`<option value="${l.id}" ${l.id===state.currentListId?'selected':''}>${escapeHtml(l.name)}</option>`).join('');
 }
+let mergeData = null;   // { listName, headers, rows }
+let savedMergeTables = [];
+function mergeTableHtml(headers, rows){
+  let html = '<table class="roster-table" style="min-width:100%;"><thead><tr><th>姓名</th><th>学号</th>';
+  headers.forEach(h => { html += `<th style="text-align:center;">${escapeHtml(h)}</th>`; });
+  html += '<th style="text-align:center;">未到次数</th></tr></thead><tbody>';
+  rows.forEach(row => {
+    html += `<tr><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.sid)}</td>`;
+    row.cells.forEach(c => {
+      if(c==='已到'){ html += '<td style="text-align:center;color:#000;font-size:16px;">✓</td>'; }
+      else if(c==='未到'){ html += '<td style="text-align:center;color:#dc2626;font-size:16px;font-weight:700;">✘</td>'; }
+      else { html += '<td style="text-align:center;color:#c1c6cd;">·</td>'; }
+    });
+    html += `<td style="text-align:center;font-weight:700;color:${row.absentCount>0?'#dc2626':'#8a919b'};">${row.absentCount}</td></tr>`;
+  });
+  html += '</tbody></table><p class="hint">✓ 已到　✘ 未到　· 无记录</p>';
+  return html;
+}
 function openMergeTable(){
   renderMergeListSelector();
+  $('#merge-title').textContent = '📊 生成合并表';
+  $('#merge-generate-area').style.display = '';
   $('#merge-result').innerHTML = '';
   $('#merge-mask').classList.remove('hidden');
+}
+async function viewMergeTable(id){
+  const mt = savedMergeTables.find(x=>x.id===id);
+  if(!mt) return;
+  try{
+    const d = JSON.parse(mt.data);
+    mergeData = { listName: mt.list_name, headers: d.headers, rows: d.rows };
+    $('#merge-title').textContent = `📊 合并表 · ${escapeHtml(mt.list_name)} · ${formatTime(mt.created_at)}`;
+    $('#merge-generate-area').style.display = 'none';
+    $('#merge-result').innerHTML = mergeTableHtml(d.headers, d.rows) + '<button class="btn secondary" id="merge-download" style="margin-top:10px;">下载合并表（CSV）</button>';
+    $('#merge-download').onclick = downloadMergeTable;
+    $('#merge-mask').classList.remove('hidden');
+  }catch(e){ toast(e.message); }
 }
 function closeMergeTable(){
   $('#merge-mask').classList.add('hidden');
 }
-let mergeData = null;
+async function renderMergeSavedList(){
+  const el = $('#merge-saved-list');
+  if(!el) return;
+  try{ savedMergeTables = await api.listMergeTables(); }catch(e){ return; }
+  if(!savedMergeTables.length){ el.innerHTML = '<div class="empty" style="padding:12px;">还没有合并表</div>'; return; }
+  el.innerHTML = savedMergeTables.map(mt=>`
+    <div class="session-item" style="margin-bottom:8px;">
+      <div class="dt" style="cursor:pointer;" data-view="${mt.id}">
+        <div class="d">📊 ${escapeHtml(mt.list_name)}</div>
+        <div class="p">生成于 ${formatTime(mt.created_at)}</div>
+      </div>
+      <button class="del" data-del="${mt.id}" title="删除" style="border:none;background:none;color:#c1c6cd;font-size:18px;cursor:pointer;">×</button>
+    </div>`).join('');
+  el.querySelectorAll('[data-view]').forEach(b=>{ b.onclick = ()=>viewMergeTable(b.dataset.view); });
+  el.querySelectorAll('[data-del]').forEach(b=>{ b.onclick = async e=>{
+    e.stopPropagation();
+    if(!confirm('删除该合并表？')) return;
+    await api.deleteMergeTable(b.dataset.del);
+    toast('已删除');
+    renderMergeSavedList();
+  };});
+}
 async function generateMergeTable(){
   const listId = $('#merge-list').value;
   const list = state.lists.find(l=>l.id===listId);
@@ -923,30 +982,20 @@ async function generateMergeTable(){
     const recsArrays = await Promise.all(sessions.map(s => api.listRecords(s.id)));
     const recsBySession = {};
     sessions.forEach((s,i)=>{ recsBySession[s.id] = recsArrays[i] || []; });
+    const headers = sessions.map(s => `${shortDate(s.sdate)} ${s.period}`);
     const rows = people.map(p => {
       const cells = sessions.map(s => {
         const rec = (recsBySession[s.id]||[]).find(r=>r.sid===p.sid);
         return rec ? rec.status : '';
       });
-      return { p, cells, absentCount: cells.filter(c=>c==='未到').length };
+      return { name: p.name, sid: p.sid, cells, absentCount: cells.filter(c=>c==='未到').length };
     });
-    mergeData = { list, sessions, rows };
-    let html = '<table class="roster-table" style="min-width:100%;"><thead><tr><th>姓名</th><th>学号</th>';
-    for(const s of sessions){ html += `<th style="text-align:center;">${shortDate(s.sdate)}<br>${escapeHtml(s.period)}</th>`; }
-    html += '<th style="text-align:center;">未到次数</th></tr></thead><tbody>';
-    for(const row of rows){
-      html += `<tr><td>${escapeHtml(row.p.name)}</td><td>${escapeHtml(row.p.sid)}</td>`;
-      for(const c of row.cells){
-        if(c==='已到'){ html += '<td style="text-align:center;color:#000;font-size:16px;">✓</td>'; }
-        else if(c==='未到'){ html += '<td style="text-align:center;color:#dc2626;font-size:16px;font-weight:700;">✘</td>'; }
-        else { html += '<td style="text-align:center;color:#c1c6cd;">·</td>'; }
-      }
-      html += `<td style="text-align:center;font-weight:700;color:${row.absentCount>0?'#dc2626':'#8a919b'};">${row.absentCount}</td></tr>`;
-    }
-    html += '</tbody></table><p class="hint">✓ 已到　✘ 未到　· 无记录</p>';
-    html += '<button class="btn secondary" id="merge-download" style="margin-top:10px;">下载合并表（CSV）</button>';
-    $('#merge-result').innerHTML = html;
+    await api.createMergeTable(list.name, JSON.stringify({ headers, rows }));
+    mergeData = { listName: list.name, headers, rows };
+    $('#merge-result').innerHTML = mergeTableHtml(headers, rows) + '<button class="btn secondary" id="merge-download" style="margin-top:10px;">下载合并表（CSV）</button>';
     $('#merge-download').onclick = downloadMergeTable;
+    toast('已生成并保存');
+    renderMergeSavedList();
   }catch(e){
     toast(e.message);
     $('#merge-result').innerHTML = '<div class="empty">生成失败：'+escapeHtml(e.message||'')+'</div>';
@@ -954,17 +1003,17 @@ async function generateMergeTable(){
 }
 function downloadMergeTable(){
   if(!mergeData) return;
-  const { list, sessions, rows } = mergeData;
-  const header = ['姓名','学号', ...sessions.map(s=>`${shortDate(s.sdate)} ${s.period}`), '未到次数'];
-  const csvRows = [header];
+  const { listName, headers, rows } = mergeData;
+  const csvHeader = ['姓名','学号', ...headers, '未到次数'];
+  const csvRows = [csvHeader];
   for(const row of rows){
-    csvRows.push([row.p.name, row.p.sid, ...row.cells.map(c=>c==='已到'?'✓':(c==='未到'?'✘':'')), row.absentCount]);
+    csvRows.push([row.name, row.sid, ...row.cells.map(c=>c==='已到'?'✓':(c==='未到'?'✘':'')), row.absentCount]);
   }
   const csv = '﻿' + csvRows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `合并表_${list.name}.csv`;
+  a.download = `合并表_${listName}.csv`;
   a.click(); URL.revokeObjectURL(a.href);
 }
 
@@ -1044,7 +1093,7 @@ function showMain(view){
   ['people','sign','history'].forEach(v => $('#view-'+v).classList.toggle('hidden', v!==view));
   document.querySelectorAll('#screen-admin .tabbar button').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
   if(view==='sign'){ if(!$('#sign-date').value) $('#sign-date').value = todayStr(); renderSignHint(); }
-  if(view==='history'){ renderMergeListSelector(); renderHistory(); }
+  if(view==='history'){ renderMergeListSelector(); renderHistory(); renderMergeSavedList(); }
 }
 async function enterAdmin(){
   state.role = 'admin';
@@ -1121,6 +1170,7 @@ function bindEvents(){
   $('#hist-clear').onclick = ()=>{ $('#hist-date').value=''; renderHistory(); };
   $('#hist-date').onchange = renderHistory;
   $('#merge-generate').onclick = generateMergeTable;
+  $('#merge-new').onclick = openMergeTable;
   $('#merge-close').onclick = closeMergeTable;
   $('#merge-mask').onclick = e=>{ if(e.target.id==='merge-mask') closeMergeTable(); };
 
