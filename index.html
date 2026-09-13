@@ -908,15 +908,21 @@ async function generateMergeTable(){
   const listId = $('#merge-list').value;
   const list = state.lists.find(l=>l.id===listId);
   if(!list){ toast('请先选择名单'); return; }
+  $('#merge-result').innerHTML = '<div class="empty">⏳ 正在生成合并表…</div>';
   try{
     const people = await api.listPeople(listId);
     if(!people.length){ $('#merge-result').innerHTML = '<div class="empty">该名单还没有人员</div>'; return; }
-    const sessions = (await api.listSessions())
-      .filter(s => (s.list_name||'') === list.name)
-      .sort((a,b)=> (a.sdate||'').localeCompare(b.sdate||'') || (a.created_at||'').localeCompare(b.created_at||''));
+    const allSessions = await api.listSessions();
+    let sessions = allSessions.filter(s => (s.list_name||'') === list.name);
+    if(!sessions.length && state.lists[0] && state.lists[0].id === listId){
+      // 兼容旧数据：历史场次没有名单名，归入第一个（默认）名单
+      sessions = allSessions.filter(s => !s.list_name);
+    }
+    sessions.sort((a,b)=> (a.sdate||'').localeCompare(b.sdate||'') || (a.created_at||'').localeCompare(b.created_at||''));
     if(!sessions.length){ $('#merge-result').innerHTML = '<div class="empty">该名单还没有签到记录</div>'; return; }
+    const recsArrays = await Promise.all(sessions.map(s => api.listRecords(s.id)));
     const recsBySession = {};
-    for(const s of sessions){ recsBySession[s.id] = await api.listRecords(s.id); }
+    sessions.forEach((s,i)=>{ recsBySession[s.id] = recsArrays[i] || []; });
     const rows = people.map(p => {
       const cells = sessions.map(s => {
         const rec = (recsBySession[s.id]||[]).find(r=>r.sid===p.sid);
@@ -941,7 +947,10 @@ async function generateMergeTable(){
     html += '<button class="btn secondary" id="merge-download" style="margin-top:10px;">下载合并表（CSV）</button>';
     $('#merge-result').innerHTML = html;
     $('#merge-download').onclick = downloadMergeTable;
-  }catch(e){ toast(e.message); }
+  }catch(e){
+    toast(e.message);
+    $('#merge-result').innerHTML = '<div class="empty">生成失败：'+escapeHtml(e.message||'')+'</div>';
+  }
 }
 function downloadMergeTable(){
   if(!mergeData) return;
