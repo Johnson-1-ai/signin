@@ -29,6 +29,9 @@ create table if not exists sessions (
   sdate      text not null,                 -- 日期，如 2026-09-08
   period     text not null,                 -- 名称/时段：上午 / 下午 / 晚自习 / 第3节课…
   list_name  text,                          -- 本次使用的人员名单名称
+  center_lat double precision,              -- 签到中心纬度（自行签到范围）
+  center_lng double precision,              -- 签到中心经度
+  radius     double precision,              -- 签到范围（米）
   created_at timestamptz not null default now(),
   unique (sdate, period, list_name)         -- 同一天同一名称同一名单只允许一次签到
 );
@@ -44,6 +47,8 @@ create table if not exists records (
   status     text not null default '未到',  -- 已到 / 未到
   note       text not null default '',      -- 备注
   checkin_time timestamptz,                 -- 学生自助签到时间
+  lat         double precision,             -- 签到位置纬度
+  lng         double precision,             -- 签到位置经度
   updated_at timestamptz not null default now()
 );
 

@@ -225,6 +225,16 @@
             <button type="button" data-mode="self">自行签到</button>
           </div>
         </div>
+        <div id="sign-location-area" class="hidden">
+          <div class="field"><label>签到中心（纬度，经度）</label>
+            <div class="row-2">
+              <input type="text" id="sign-lat" placeholder="纬度，如 30.123">
+              <input type="text" id="sign-lng" placeholder="经度，如 120.456">
+            </div>
+            <button class="btn secondary" id="sign-locate" style="margin-top:8px;">📍 用我当前位置</button>
+          </div>
+          <div class="field"><label>签到范围（米）</label><input type="number" id="sign-radius" value="300" placeholder="默认 300 米"></div>
+        </div>
         <button class="btn" id="sign-start">开始签到</button>
         <p class="hint" id="sign-hint"></p>
       </div>
@@ -395,7 +405,7 @@
 const SUPABASE_URL = "https://wydwkgyrgjgeinxugjdv.supabase.co";        // 例：https://xxxx.supabase.co
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5ZHdrZ3lyZ2pnZWlueHVnamR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4NzQyNzcsImV4cCI6MjEwNDQ1MDI3N30.zmSiYu081OZksjRQYn-YjYrDWoLchLh-XRM6o4UwKeQ";   // 例：eyJhbGciOi...（anon public key）
 // 管理员/终极管理员账号存数据库 admins 表（迁移时播种首个终极管理员 admin）
-const VERSION = "1.0.0";        // 版本号：每次更新后递增
+const VERSION = "1.1.0";        // 版本号：每次更新后递增
 
 /* ================= 工具 ================= */
 const $ = s => document.querySelector(s);
@@ -452,13 +462,13 @@ const api = {
   findPeopleBySid: sid => db.req('GET', `people?sid=eq.${enc(sid)}&select=*`),
   listSessions: () => db.req('GET', 'sessions?select=*&order=sdate.desc'),
   findSession:  (sdate,period,listName) => db.req('GET', `sessions?sdate=eq.${enc(sdate)}&period=eq.${enc(period)}&list_name=eq.${enc(listName||'')}&select=*`),
-  createSession:(sdate,period,listName) => db.req('POST', 'sessions', [{sdate, period, list_name: listName||''}]),
+  createSession:(sdate,period,listName,center) => db.req('POST', 'sessions', [{sdate, period, list_name: listName||'', center_lat: center?center.lat:null, center_lng: center?center.lng:null, radius: center?center.radius:null}]),
   delSession:   id => db.req('DELETE', `sessions?id=eq.${enc(id)}`),
   listRecords:  sessionId => db.req('GET', `records?session_id=eq.${enc(sessionId)}&select=*&order=ord.asc`),
   listRecordsBySid: sid => db.req('GET', `records?sid=eq.${enc(sid)}&select=*`),
   createRecords: rows => db.req('POST', 'records', rows),
   updateRecord: (id, patch) => db.req('PATCH', `records?id=eq.${enc(id)}`, patch),
-  checkin: (id) => db.req('PATCH', `records?id=eq.${enc(id)}`, { status: '已到', checkin_time: new Date().toISOString() })
+  checkin: (id, lat, lng) => db.req('PATCH', `records?id=eq.${enc(id)}`, { status: '已到', checkin_time: new Date().toISOString(), lat: lat||null, lng: lng||null })
 };
 
 /* ================= 账号（Supabase Auth / GoTrue）================= */
@@ -741,12 +751,20 @@ async function startSign(){
   const sdate = $('#sign-date').value;
   const period = ($('#sign-period').value || '').trim() || '上午';
   const listName = (state.lists.find(l=>l.id===state.currentListId)||{}).name || '';
+  const mode = document.querySelector('#sign-mode button.active').dataset.mode;
+  let center = null;
+  if(mode === 'self'){
+    const lat = parseFloat($('#sign-lat').value);
+    const lng = parseFloat($('#sign-lng').value);
+    const radius = parseFloat($('#sign-radius').value) || 0;
+    if(lat && lng && radius > 0){ center = { lat, lng, radius }; }
+  }
   if(!sdate){ toast('请选择日期'); return; }
   try{
     let found = await api.findSession(sdate, period, listName);
     let session = found[0];
     if(!session){
-      const created = await api.createSession(sdate, period, listName);
+      const created = await api.createSession(sdate, period, listName, center);
       session = created[0];
       const rows = state.people.map((p,i)=>({
         session_id: session.id, person_id: p.id, name: p.name, sid: p.sid, ord: i, status: '未到', note: ''
@@ -755,7 +773,6 @@ async function startSign(){
     }
     const records = await api.listRecords(session.id);
     state.cur = { session, records }; state.idx = 0;
-    const mode = document.querySelector('#sign-mode button.active').dataset.mode;
     if(mode === 'self'){
       toast('已发起自行签到，学生可自行签到');
       openSession(session.id);
@@ -841,7 +858,7 @@ function renderSession(){
     <tr data-edit="${r.id}" style="cursor:pointer;">
       <td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.sid)}</td>
       <td><span class="badge ${r.status==='已到'?'present':'absent'}">${r.status}</span></td>
-      <td style="color:var(--muted);font-size:12px;">${r.checkin_time?formatTime(r.checkin_time):''}</td>
+      <td style="color:var(--muted);font-size:12px;">${r.checkin_time?formatTime(r.checkin_time):''}${r.lat!=null?'<br>📍 已定位':''}</td>
       <td>${escapeHtml(r.note||'')}</td>
     </tr>`).join('');
   html += `</tbody></table>`;
@@ -1117,12 +1134,39 @@ function renderCheckin(){
     if(btn) btn.onclick = doCheckin;
   }
 }
+function getPosition(){
+  return new Promise((resolve, reject)=>{
+    if(!navigator.geolocation){ reject(new Error('当前浏览器不支持定位')); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({lat: pos.coords.latitude, lng: pos.coords.longitude}),
+      err => reject(new Error('定位失败：' + (err.message || '请允许定位权限'))),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+    );
+  });
+}
+function distanceMeters(lat1, lng1, lat2, lng2){
+  const R = 6371000, toRad = d => d*Math.PI/180;
+  const dLat = toRad(lat2-lat1), dLng = toRad(lng2-lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
 async function doCheckin(){
   const r = state.activeRecord;
   if(!r) return;
+  const s = state.activeSession;
   try{
-    await api.checkin(r.id);
-    r.status = '已到'; r.checkin_time = new Date().toISOString();
+    let lat = null, lng = null;
+    if(s && s.radius && s.center_lat != null && s.center_lng != null){
+      const pos = await getPosition();
+      lat = pos.lat; lng = pos.lng;
+      const dist = distanceMeters(s.center_lat, s.center_lng, lat, lng);
+      if(dist > s.radius){
+        toast(`不在签到范围内（距中心约 ${Math.round(dist)} 米）`);
+        return;
+      }
+    }
+    await api.checkin(r.id, lat, lng);
+    r.status = '已到'; r.checkin_time = new Date().toISOString(); r.lat = lat; r.lng = lng;
     toast('签到成功 ✅');
     renderMember();
   }catch(e){ toast(e.message); }
@@ -1232,7 +1276,18 @@ function bindEvents(){
   document.querySelectorAll('#sign-mode button').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('#sign-mode button').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
+    $('#sign-location-area').classList.toggle('hidden', b.dataset.mode !== 'self');
   });
+  $('#sign-locate').onclick = async ()=>{
+    $('#sign-locate').textContent = '定位中…';
+    try{
+      const pos = await getPosition();
+      $('#sign-lat').value = pos.lat.toFixed(6);
+      $('#sign-lng').value = pos.lng.toFixed(6);
+      toast('已定位');
+    }catch(e){ toast(e.message); }
+    $('#sign-locate').textContent = '📍 用我当前位置';
+  };
   $('#sign-start').onclick = startSign;
 
   // 逐人签到
