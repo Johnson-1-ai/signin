@@ -217,6 +217,12 @@
             <button type="button" data-period="补签">补签</button>
           </div>
         </div>
+        <div class="field"><label>签到方式</label>
+          <div class="seg" id="sign-mode">
+            <button type="button" data-mode="rollcall" class="active">口头点到</button>
+            <button type="button" data-mode="self">自行签到</button>
+          </div>
+        </div>
         <button class="btn" id="sign-start">开始签到</button>
         <p class="hint" id="sign-hint"></p>
       </div>
@@ -746,7 +752,13 @@ async function startSign(){
     }
     const records = await api.listRecords(session.id);
     state.cur = { session, records }; state.idx = 0;
-    showScreen('screen-signing'); renderSigning();
+    const mode = document.querySelector('#sign-mode button.active').dataset.mode;
+    if(mode === 'self'){
+      toast('已发起自行签到，学生可自行签到');
+      openSession(session.id);
+    } else {
+      showScreen('screen-signing'); renderSigning();
+    }
   }catch(e){ toast(e.message); }
 }
 function renderSigning(){
@@ -1214,6 +1226,10 @@ function bindEvents(){
   // 签到：快捷名称按钮填入输入框
   $('#sign-period-quick').querySelectorAll('button').forEach(b=>b.onclick=()=>{ $('#sign-period').value = b.dataset.period; });
   $('#sign-list').onchange = ()=>switchList($('#sign-list').value);
+  document.querySelectorAll('#sign-mode button').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('#sign-mode button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+  });
   $('#sign-start').onclick = startSign;
 
   // 逐人签到
