@@ -226,14 +226,14 @@
           </div>
         </div>
         <div id="sign-location-area" class="hidden">
-          <div class="field"><label>签到中心（纬度，经度）</label>
+          <div class="field"><label>签到中心（纬度，经度，选填）</label>
             <div class="row-2">
               <input type="text" id="sign-lat" placeholder="纬度，如 30.123">
               <input type="text" id="sign-lng" placeholder="经度，如 120.456">
             </div>
             <button class="btn secondary" id="sign-locate" style="margin-top:8px;">📍 用我当前位置</button>
+            <p class="hint">不设范围，所有人都能签到；中心点只用于记录每人距中心的距离。</p>
           </div>
-          <div class="field"><label>签到范围（米）</label><input type="number" id="sign-radius" value="300" placeholder="默认 300 米"></div>
         </div>
         <button class="btn" id="sign-start">开始签到</button>
         <p class="hint" id="sign-hint"></p>
@@ -405,7 +405,7 @@
 const SUPABASE_URL = "https://wydwkgyrgjgeinxugjdv.supabase.co";        // 例：https://xxxx.supabase.co
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5ZHdrZ3lyZ2pnZWlueHVnamR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4NzQyNzcsImV4cCI6MjEwNDQ1MDI3N30.zmSiYu081OZksjRQYn-YjYrDWoLchLh-XRM6o4UwKeQ";   // 例：eyJhbGciOi...（anon public key）
 // 管理员/终极管理员账号存数据库 admins 表（迁移时播种首个终极管理员 admin）
-const VERSION = "1.1.0";        // 版本号：每次更新后递增
+const VERSION = "1.1.1";        // 版本号：每次更新后递增
 
 /* ================= 工具 ================= */
 const $ = s => document.querySelector(s);
@@ -756,8 +756,7 @@ async function startSign(){
   if(mode === 'self'){
     const lat = parseFloat($('#sign-lat').value);
     const lng = parseFloat($('#sign-lng').value);
-    const radius = parseFloat($('#sign-radius').value) || 0;
-    if(lat && lng && radius > 0){ center = { lat, lng, radius }; }
+    if(lat && lng){ center = { lat, lng, radius: null }; }
   }
   if(!sdate){ toast('请选择日期'); return; }
   try{
@@ -858,7 +857,7 @@ function renderSession(){
     <tr data-edit="${r.id}" style="cursor:pointer;">
       <td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.sid)}</td>
       <td><span class="badge ${r.status==='已到'?'present':'absent'}">${r.status}</span></td>
-      <td style="color:var(--muted);font-size:12px;">${r.checkin_time?formatTime(r.checkin_time):''}${r.lat!=null?'<br>📍 已定位':''}</td>
+      <td style="color:var(--muted);font-size:12px;">${r.checkin_time?formatTime(r.checkin_time):''}${recordDistance(session, r)!=null?`<br>📍 距中心 ${recordDistance(session, r)} 米`:(r.lat!=null?'<br>📍 已定位':'')}</td>
       <td>${escapeHtml(r.note||'')}</td>
     </tr>`).join('');
   html += `</tbody></table>`;
@@ -889,14 +888,14 @@ function buildListText(){
   if(!absent.length) lines.push('（无）');
   lines.push('');
   lines.push('【全部名单】');
-  lines.push('姓名\t学号\t签到情况\t签到时间\t备注');
-  records.forEach(r=>lines.push(`${r.name}\t${r.sid}\t${r.status}\t${r.checkin_time?formatTime(r.checkin_time):''}\t${r.note||''}`));
+  lines.push('姓名\t学号\t签到情况\t签到时间\t距中心(米)\t备注');
+  records.forEach(r=>{ const d = recordDistance(session, r); lines.push(`${r.name}\t${r.sid}\t${r.status}\t${r.checkin_time?formatTime(r.checkin_time):''}\t${d!=null?d:''}\t${r.note||''}`); });
   return lines.join('\n');
 }
 function buildCSV(){
   const { session, records } = state.cur;
-  const rows = [['日期','时段','人员名单','姓名','学号','签到情况','签到时间','备注']];
-  records.forEach(r=>rows.push([session.sdate, session.period, session.list_name||'', r.name, r.sid, r.status, r.checkin_time?formatTime(r.checkin_time):'', r.note||'']));
+  const rows = [['日期','时段','人员名单','姓名','学号','签到情况','签到时间','距中心(米)','备注']];
+  records.forEach(r=>{ const d = recordDistance(session, r); rows.push([session.sdate, session.period, session.list_name||'', r.name, r.sid, r.status, r.checkin_time?formatTime(r.checkin_time):'', d!=null?d:'', r.note||'']); });
   return '﻿' + rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n');
 }
 async function exportList(mode){
@@ -1122,6 +1121,7 @@ function renderCheckin(){
       <div class="card" style="text-align:center; border:1px solid var(--green);">
         <div class="card-title">当前签到 · ${escapeHtml(a.sdate)} ${escapeHtml(a.period)}</div>
         <div style="font-size:26px; font-weight:700; color:var(--green);">✅ 已签到${r.checkin_time ? ' · ' + formatTime(r.checkin_time) : ''}</div>
+        ${recordDistance(a, r) != null ? `<div class="hint" style="text-align:center;">距中心约 ${recordDistance(a, r)} 米</div>` : ''}
       </div>`;
   } else {
     el.innerHTML = `
@@ -1150,24 +1150,26 @@ function distanceMeters(lat1, lng1, lat2, lng2){
   const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
   return 2 * R * Math.asin(Math.sqrt(a));
 }
+function recordDistance(s, r){
+  if(s && r && r.lat != null && r.lng != null && s.center_lat != null && s.center_lng != null){
+    return Math.round(distanceMeters(s.center_lat, s.center_lng, r.lat, r.lng));
+  }
+  return null;
+}
 async function doCheckin(){
   const r = state.activeRecord;
   if(!r) return;
   const s = state.activeSession;
   try{
     let lat = null, lng = null;
-    if(s && s.radius && s.center_lat != null && s.center_lng != null){
+    if(s && s.center_lat != null && s.center_lng != null){
       const pos = await getPosition();
       lat = pos.lat; lng = pos.lng;
-      const dist = distanceMeters(s.center_lat, s.center_lng, lat, lng);
-      if(dist > s.radius){
-        toast(`不在签到范围内（距中心约 ${Math.round(dist)} 米）`);
-        return;
-      }
     }
     await api.checkin(r.id, lat, lng);
     r.status = '已到'; r.checkin_time = new Date().toISOString(); r.lat = lat; r.lng = lng;
-    toast('签到成功 ✅');
+    const d = recordDistance(s, r);
+    toast(d != null ? `签到成功，距中心约 ${d} 米` : '签到成功 ✅');
     renderMember();
   }catch(e){ toast(e.message); }
 }
