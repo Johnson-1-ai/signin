@@ -261,6 +261,7 @@
     <div id="view-accounts" class="content hidden">
       <div class="card">
         <h3>新建账号</h3>
+        <div class="field"><label>姓名（选填）</label><input type="text" id="acc-name" placeholder="如 张三"></div>
         <div class="field"><label>账号学号</label><input type="text" id="acc-sid" placeholder="输入学号"></div>
         <div class="field"><label>角色</label>
           <div class="seg" id="acc-role">
@@ -269,6 +270,12 @@
           </div>
         </div>
         <button class="btn" id="acc-add">添加账号</button>
+      </div>
+      <div class="card">
+        <h3>批量添加管理员</h3>
+        <textarea class="textarea" id="acc-batch" placeholder="张三 2001&#10;李四 2002&#10;王五 2003"></textarea>
+        <p class="hint">每行一人「名字 学号」，用空格或逗号分隔。</p>
+        <button class="btn" id="acc-batch-add" style="margin-top:12px;">批量添加</button>
       </div>
       <div class="card">
         <h3>现有账号</h3>
@@ -405,7 +412,7 @@
 const SUPABASE_URL = "https://wydwkgyrgjgeinxugjdv.supabase.co";        // 例：https://xxxx.supabase.co
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5ZHdrZ3lyZ2pnZWlueHVnamR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4NzQyNzcsImV4cCI6MjEwNDQ1MDI3N30.zmSiYu081OZksjRQYn-YjYrDWoLchLh-XRM6o4UwKeQ";   // 例：eyJhbGciOi...（anon public key）
 // 管理员/终极管理员账号存数据库 admins 表（迁移时播种首个终极管理员 admin）
-const VERSION = "1.1.1";        // 版本号：每次更新后递增
+const VERSION = "1.2.0";        // 版本号：每次更新后递增
 
 /* ================= 工具 ================= */
 const $ = s => document.querySelector(s);
@@ -454,7 +461,7 @@ const api = {
   createMergeTable: (listName, data) => db.req('POST', 'merge_tables', [{list_name: listName, data}]),
   deleteMergeTable: (id) => db.req('DELETE', `merge_tables?id=eq.${enc(id)}`),
   listAdmins:  () => db.req('GET', 'admins?select=*&order=created_at.asc'),
-  addAdmin:    (sid, role) => db.req('POST', 'admins', [{sid, role}]),
+  addAdmin:    (sid, role, name) => db.req('POST', 'admins', [{sid, role, name: name||null}]),
   deleteAdmin: (id) => db.req('DELETE', `admins?id=eq.${enc(id)}`),
   listPeople:   (listId) => db.req('GET', `people?list_id=eq.${enc(listId)}&select=*&order=ord.asc`),
   addPeople:    rows => db.req('POST', 'people', rows),
@@ -1203,8 +1210,10 @@ async function renderAccounts(){
     const isSuper = a.role === 'super';
     const isSelf = (a.sid||'').toLowerCase() === mySid;
     return `<div class="person-row">
-      <span class="nm">${escapeHtml(a.sid)}</span>
-      <span class="sd">${isSuper ? '终极管理员' : '管理员'}</span>
+      <div class="flex1">
+        <div class="nm">${a.name ? escapeHtml(a.name) : escapeHtml(a.sid)}</div>
+        <div class="sd">${a.name ? escapeHtml(a.sid)+' · ' : ''}${isSuper ? '终极管理员' : '管理员'}</div>
+      </div>
       ${isSelf ? '' : `<button class="del" data-del="${a.id}" title="删除">×</button>`}
     </div>`;
   }).join('');
@@ -1217,14 +1226,35 @@ async function renderAccounts(){
 }
 async function addAccount(){
   const sid = $('#acc-sid').value.trim();
+  const name = $('#acc-name').value.trim();
   const role = document.querySelector('#acc-role button.active').dataset.role;
   if(!sid){ toast('请输入账号学号'); return; }
   try{
-    await api.addAdmin(sid, role);
+    await api.addAdmin(sid, role, name || null);
     toast('已添加');
-    $('#acc-sid').value = '';
+    $('#acc-sid').value = ''; $('#acc-name').value = '';
     renderAccounts();
   }catch(e){ toast(e.message); }
+}
+async function addAccountsBatch(){
+  const text = $('#acc-batch').value;
+  const parsed = parsePeople(text);
+  if(!parsed.length){ toast('未解析到有效账号'); return; }
+  let existing = new Set();
+  try { existing = new Set((await api.listAdmins()).map(a => (a.sid||'').toLowerCase())); }catch(e){}
+  let added = 0, skipped = 0;
+  for(const p of parsed){
+    const sidLower = p.sid.toLowerCase();
+    if(existing.has(sidLower)){ skipped++; continue; }
+    try{
+      await api.addAdmin(p.sid, 'admin', p.name);
+      existing.add(sidLower);
+      added++;
+    }catch(e){ skipped++; }
+  }
+  toast(added ? `已添加 ${added} 个管理员账号${skipped?`，跳过 ${skipped} 个（重复或失败）`:''}` : '没有新增（学号均已存在）');
+  $('#acc-batch').value = '';
+  renderAccounts();
 }
 
 /* ================= 安装为应用（PWA）================= */
@@ -1312,6 +1342,7 @@ function bindEvents(){
 
   // 账号管理
   $('#acc-add').onclick = addAccount;
+  $('#acc-batch-add').onclick = addAccountsBatch;
   document.querySelectorAll('#acc-role button').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('#acc-role button').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
