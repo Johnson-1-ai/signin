@@ -55,11 +55,19 @@ create table if not exists merge_tables (
   created_at timestamptz not null default now()  -- 生成时间
 );
 
--- 6) 授权：让匿名(anon)角色可读写这些表
+-- 6) 账号表（终极管理员 / 管理员）
+create table if not exists admins (
+  id         uuid primary key default gen_random_uuid(),
+  sid        text not null unique,          -- 账号学号
+  role       text not null default 'admin', -- 'super' 终极管理员 / 'admin' 管理员
+  created_at timestamptz not null default now()
+);
+
+-- 7) 授权：让匿名(anon)角色可读写这些表
 --    （本工具把 anon key 直接内嵌在前端，适合班级/内部使用；
 --      对公网恶意者而言 key 可见，请勿存放敏感数据）
 grant usage on schema public to anon, authenticated;
-grant select, insert, update, delete on lists, people, sessions, records, merge_tables to anon, authenticated;
+grant select, insert, update, delete on lists, people, sessions, records, merge_tables, admins to anon, authenticated;
 
 -- 6) 行级安全策略：允许 anon 全量读写（简单工具，不做多用户隔离）
 alter table lists    enable row level security;
@@ -67,11 +75,13 @@ alter table people   enable row level security;
 alter table sessions enable row level security;
 alter table records  enable row level security;
 alter table merge_tables enable row level security;
+alter table admins enable row level security;
 
 create policy "lists_all"    on lists    for all to anon using (true) with check (true);
 create policy "people_all"   on people   for all to anon using (true) with check (true);
 create policy "sessions_all" on sessions for all to anon using (true) with check (true);
 create policy "records_all"  on records  for all to anon using (true) with check (true);
 create policy "merge_tables_all" on merge_tables for all to anon using (true) with check (true);
+create policy "admins_all" on admins for all to anon using (true) with check (true);
 
 -- 完成。现在到 项目设置 → API，复制 Project URL 与 anon public key 即可。
